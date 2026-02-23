@@ -18,17 +18,16 @@ const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="non
 // --- 管理者パスワードの設定 ---
 const MASTER_ADMIN_PASSCODE = "2525"; 
 
-// --- Firebase Configuration Logic ---
+// --- Firebase Configuration ---
 const getFirebaseConfig = () => {
-  // 1. プレビュー環境(Canvas)の変数を最優先する
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     try {
-      return JSON.parse(__firebase_config);
+      const config = JSON.parse(__firebase_config);
+      if (config && config.apiKey) return config;
     } catch (e) {
       console.error("Firebase config parse error", e);
     }
   }
-  // 2. 本番環境(Vercel)用のハードコード設定
   return {
     apiKey: "AIzaSyDEw9TJCXWJlAoDgc1XlXCMl0LMKxrzLgg",
     authDomain: "duty-manager-33163.firebaseapp.com",
@@ -40,12 +39,14 @@ const getFirebaseConfig = () => {
   };
 };
 
-// Initialize Firebase services outside the component
+// Initialize Firebase services
 const firebaseConfig = getFirebaseConfig();
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-v2-production';
+const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+
+// appId must strictly follow Rule 1 path requirements
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-final';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -77,7 +78,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. Auth & Hash listener
+  // 1. Authentication Lifecycle (Rule 3: Auth Before Queries)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -88,7 +89,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg(`認証エラーが発生しました。FirebaseのAPIキー設定を再確認してください。\n(Code: ${error.code})`);
+        setErrorMsg(`認証エラー: Firebaseのアクセス権限または設定を確認してください。\n(Code: ${error.code})`);
       }
     };
     initAuth();
@@ -97,31 +98,36 @@ export default function App() {
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+    });
     return () => {
       unsubscribe();
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, []);
 
-  // 2. Public Data - Group List (Admin only view if no groupId)
+  // 2. Fetch Group List (Rule 1: Path Structure)
   useEffect(() => {
-    if (!user) return;
+    if (!user) return; // Wait for authentication
+    
+    // Path: /artifacts/{appId}/public/data/groups
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
+    
     const unsub = onSnapshot(groupsRef, (snap) => {
       setGroupList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
       if (!groupId) setLoading(false);
     }, (err) => {
-        console.error("Firestore groups error:", err);
-        if (err.code === 'permission-denied') {
-            setErrorMsg("データ取得権限がありません。Firestoreのルール設定を確認してください。");
-        }
-        setLoading(false);
+      console.error("Firestore groups error:", err);
+      if (err.code === 'permission-denied') {
+        setErrorMsg("権限エラー: Firestoreの「ルール」設定が正しく公開(Publish)されているか、保存先パスが規定通りか確認してください。");
+      }
+      setLoading(false);
     });
     return () => unsub();
   }, [user, groupId]);
 
-  // 3. Room Specific Data
+  // 3. Sync Specific Room Data
   useEffect(() => {
     if (!user || !groupId) return;
     setLoading(true);
@@ -133,14 +139,19 @@ export default function App() {
     const unsubM = onSnapshot(membersCol, (s) => {
       setMembers(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.count || 0) - (b.count || 0)));
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+        console.error("Sync error:", err);
+        setLoading(false);
+    });
+    
     const unsubE = onSnapshot(eventsCol, (s) => {
       setEvents(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date) - new Date(a.date)));
-    });
+    }, (err) => console.error("Event sync error:", err));
+    
     const unsubS = onSnapshot(configDoc, (d) => { 
       if (d.exists()) setSettings(d.data());
       else setSettings({ appName: "当番管理", taskName: "用具" });
-    });
+    }, (err) => console.error("Config sync error:", err));
     
     return () => { unsubM(); unsubE(); unsubS(); };
   }, [user, groupId]);
@@ -153,10 +164,20 @@ export default function App() {
     const groupName = e.target.groupName.value.trim();
     if (!groupName || !user) return;
     const newGroupId = 'group_' + Date.now().toString(36);
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', newGroupId), { name: groupName, createdAt: new Date().toISOString() });
-    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', newGroupId), { appName: groupName, taskName: "用具" });
-    e.target.reset();
-    window.location.hash = newGroupId;
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', newGroupId), { 
+          name: groupName, 
+          createdAt: new Date().toISOString() 
+      });
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', newGroupId), { 
+          appName: groupName, 
+          taskName: "用具" 
+      });
+      e.target.reset();
+      window.location.hash = newGroupId;
+    } catch (e) {
+      setModal({ open: true, title: "保存エラー", content: "部屋の作成に失敗しました。" });
+    }
   };
 
   const handleAddMember = async (e) => {
@@ -213,10 +234,10 @@ export default function App() {
 
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
-      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center">
+      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center animate-in zoom-in-95">
         <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続エラー</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{errorMsg}</p>
-        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みする</button>
+        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all">再読み込みする</button>
       </div>
     </div>
   );
@@ -225,17 +246,18 @@ export default function App() {
     <div className="flex flex-col h-screen items-center justify-center bg-slate-50 font-sans p-10 text-center text-slate-400">
       <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
       <div className="font-black text-lg mb-2 uppercase tracking-widest text-indigo-600">Connecting...</div>
+      <div className="text-[10px] font-bold uppercase tracking-[0.2em]">{user ? "Access Granted" : "Checking Auth"}</div>
     </div>
   );
 
-  // --- 管理者ロック画面 (ハッシュがない時のみ表示) ---
+  // --- 管理者ロック画面 ---
   if (!groupId) {
     if (!isAdminAuthenticated) {
       return (
         <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
           <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-300">
             <div className="text-5xl mb-6">🔒</div>
-            <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight">ADMIN LOCK</h1>
+            <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight uppercase">Admin Lock</h1>
             <p className="text-slate-400 text-sm mb-8 leading-relaxed">管理者パネルを表示するには<br/>パスワードを入力してください</p>
             <input 
               type="password" 
@@ -265,7 +287,6 @@ export default function App() {
       );
     }
 
-    // 管理画面 (部屋の作成・削除)
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
         <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
@@ -278,6 +299,7 @@ export default function App() {
             <div>
               <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">作成済みの部屋 (団体)</h3>
               <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-8 italic">団体はまだありません</p>}
                 {groupList.map(g => (
                   <div key={g.id} className="flex gap-2 group">
                     <button onClick={() => window.location.hash = g.id} className="flex-1 p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm hover:border-indigo-500 transition-all overflow-hidden">
@@ -296,7 +318,7 @@ export default function App() {
             <div className="pt-8 border-t border-slate-100">
               <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">新しい団体を追加</h3>
               <form onSubmit={handleCreateGroup} className="flex gap-2">
-                <input name="groupName" placeholder="団体名を入力" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500" required />
+                <input name="groupName" placeholder="団体名を入力" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 transition-all" required />
                 <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg active:scale-95 transition-all">作成</button>
               </form>
             </div>
@@ -319,7 +341,7 @@ export default function App() {
     );
   }
 
-  // --- メインアプリ画面 (ハッシュURLから直接アクセスした場合) ---
+  // --- メインアプリ画面 ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative">
       {modal.open && (
@@ -369,7 +391,7 @@ export default function App() {
                     </div>
                   );
                 })()
-              ) : <p className="py-12 text-slate-400 font-bold italic text-center">予定なし</p>}
+              ) : <p className="py-12 text-slate-400 font-bold italic text-center text-sm">予定なし</p>}
             </div>
           </div>
         )}
@@ -385,7 +407,12 @@ export default function App() {
                       <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
                       <div className="text-xs font-bold text-indigo-500 uppercase mt-1">担当: {e.assignedNames.join(', ')}</div>
                     </div>
-                    <button onClick={async () => { if(confirm('削除しますか？')) await deleteDoc(getDocRef('events', e.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    <button onClick={async () => { 
+                      setModal({
+                        open: true, title: "予定の削除", content: "この予定を消去しますか？",
+                        onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); }
+                      });
+                    }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 ))}
               </div>
@@ -394,8 +421,8 @@ export default function App() {
                 <button onClick={() => setIsScheduleFormOpen(false)} className="absolute top-6 right-6 p-2 text-slate-400 bg-slate-50 rounded-full transition-colors"><IconClose /></button>
                 <h3 className="font-black text-2xl mb-8">新規予定の登録</h3>
                 <form onSubmit={handleProcessEvent} className="space-y-6">
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={new Date().toISOString().split('T')[0]} /></div>
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" defaultValue={new Date().toISOString().split('T')[0]} /></div>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
                   <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">登録して自動決定</button>
                 </form>
               </div>
@@ -411,14 +438,22 @@ export default function App() {
             </form>
             <div className="space-y-3">
               {members.map(m => (
-                <div key={m.id} className={`p-5 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm' : 'bg-slate-100 opacity-60'}`}>
+                <div key={m.id} className={`p-4 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{m.name.charAt(0)}</div>
-                    <div><div className="font-bold text-lg">{m.name} さん</div><div className="text-xs text-indigo-500 font-bold uppercase tracking-widest">回数: {m.count || 0}</div></div>
+                    <div>
+                      <div className="font-bold text-lg">{m.name} さん</div>
+                      <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest">回数: {m.count || 0}</div>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
-                    <button onClick={async () => { if(confirm(`${m.name}さんを削除？`)) await deleteDoc(getDocRef('members', m.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    <button onClick={async () => { 
+                      setModal({
+                        open: true, title: "名簿の削除", content: `${m.name}さんを削除しますか？`,
+                        onConfirm: async () => { await deleteDoc(getDocRef('members', m.id)); setModal({...modal, open: false}); }
+                      });
+                    }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 </div>
               ))}
