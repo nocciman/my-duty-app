@@ -668,7 +668,7 @@ export default function App() {
 
             <div className="space-y-3">
               <div className="flex justify-between px-4 text-[10px] font-black text-slate-300 uppercase tracking-widest mb-1 font-black">
-                <span>保護者・メンバー</span>
+                <span>保護者・メンバー (計 {members.length} 名)</span>
                 <span>累計回数 / 操作</span>
               </div>
               {members.map(m => (
