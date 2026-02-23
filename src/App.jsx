@@ -85,9 +85,9 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        // 現在のドメインを表示して、追加すべきURLを教える
+        // 現在のドメインをエラーメッセージに表示
         const currentDomain = window.location.hostname;
-        setErrorMsg(`認証エラーが発生しました。Firebaseコンソールの設定 ＞ 承認済みドメインに、以下のURLを追加してください：\n\n${currentDomain}\n\n(Code: ${error.code})`);
+        setErrorMsg(`認証エラーが発生しました。\n\nFirebaseコンソールの Authentication ＞ 設定 ＞ 承認済みドメイン に、以下の文字列を【追加】してください：\n\n${currentDomain}\n\n(Code: ${error.code})`);
       }
     };
     initAuth();
@@ -278,7 +278,7 @@ export default function App() {
     );
   }
 
-  // --- 管理者専用：団体一覧画面 ---
+  // --- 管理者専用：団体一覧・作成画面 ---
   if (!groupId && isAdminAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
@@ -312,17 +312,17 @@ export default function App() {
                 <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg active:scale-95 transition-all">作成</button>
               </form>
             </div>
-            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500 transition-colors">Logout Admin Session</button>
+            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500 transition-colors">Log out Admin</button>
           </div>
         </div>
         {modal.open && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
               <h3 className="text-xl font-black mb-4">{modal.title}</h3>
-              <p className="text-slate-600 mb-6 whitespace-pre-wrap leading-relaxed font-bold">{modal.content}</p>
+              <p className="text-slate-600 mb-6 font-bold">{modal.content}</p>
               <div className="flex gap-2">
                  <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">中止</button>
-                 <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-red-600 bg-red-50 rounded-xl">削除</button>
+                 <button onClick={modal.onConfirm} className="flex-1 py-4 font-black text-red-600 bg-red-50 rounded-xl">削除</button>
               </div>
             </div>
           </div>
@@ -372,7 +372,7 @@ export default function App() {
                       <div className="text-3xl font-black text-slate-800">{formatDate(next.date)}</div>
                       <div className="flex flex-wrap justify-center gap-2 mt-4 px-2">
                         {(next.assignedNames || []).map((name, i) => (
-                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg">
+                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-5 py-2.5 rounded-2xl shadow-lg">
                             <span className="text-2xl font-bold">{String(name)} さん</span>
                           </div>
                         ))}
@@ -398,7 +398,10 @@ export default function App() {
                       <div className="text-xs font-bold text-indigo-500 uppercase mt-1 truncate">担当: {(e.assignedNames || []).join(', ')}</div>
                     </div>
                     <button onClick={async () => { 
-                      setModal({ open: true, title: "予定の削除", content: "消去しますか？", onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } });
+                      setModal({
+                        open: true, title: "予定の削除", content: "消去しますか？",
+                        onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); }
+                      });
                     }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 ))}
@@ -447,7 +450,6 @@ export default function App() {
               <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
               <input type="text" value={settings.appName} onChange={async (e) => { const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
               
-              {/* 当番の名称設定を表示 */}
               <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
               <input type="text" value={settings.taskName} onChange={async (e) => { const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
 
