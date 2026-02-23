@@ -85,7 +85,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証に失敗しました。FirebaseのAuthorized Domains設定を確認してください。");
+        setErrorMsg("認証に失敗しました。FirebaseのAuthorized Domains設定に、このサイトのドメイン（my-duty-app.vercel.appなど）が追加されているか確認してください。");
       }
     };
     initAuth();
@@ -103,7 +103,6 @@ export default function App() {
 
   // 2. 団体一覧の取得 (管理者認証済み、かつ部屋IDがない場合のみ実行)
   useEffect(() => {
-    // セキュリティ：部屋IDがなく、かつ管理者認証もされていない場合はリストを読み込まない
     if (!user || groupId || !isAdminAuthenticated) return;
     
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
@@ -121,7 +120,7 @@ export default function App() {
   // 3. 部屋別データの同期 (部屋IDがある場合は即座に実行 = URL共有者向け)
   useEffect(() => {
     if (!user || !groupId) {
-      if (!groupId) setLoading(false); // IDがない場合はローディング終了（ロック画面表示へ）
+      if (!groupId) setLoading(false); 
       return;
     }
     setLoading(true);
@@ -459,12 +458,23 @@ export default function App() {
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
             <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">App Settings</h3>
             <div className="space-y-6">
-              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
-              <input type="text" value={settings.appName} onChange={async (e) => { 
-                const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); 
-                if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
-              }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" /></div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
+                <input type="text" value={settings.appName} onChange={async (e) => { 
+                  const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); 
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); 
+                  if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
+              </div>
+              
+              {/* 当番の名称設定を復活 */}
+              <div>
+                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
+                <input type="text" value={settings.taskName} onChange={async (e) => { 
+                  const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); 
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); 
+                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
+              </div>
               
               <div className="pt-6 border-t border-slate-100">
                 <button onClick={() => { 
