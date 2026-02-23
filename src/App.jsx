@@ -18,15 +18,25 @@ const IconSlide = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="no
 const IconUndo = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
 
 // --- Firebase Configuration ---
-const firebaseConfig = {
-  apiKey: "AIzaSyDEw9TJCXWJlAoDgc1X1XCMl0LMKxrzLgg",
-  authDomain: "duty-manager-33163.firebaseapp.com",
-  projectId: "duty-manager-33163",
-  storageBucket: "duty-manager-33163.firebasestorage.app",
-  messagingSenderId: "709632134796",
-  appId: "1:709632134796:web:62292d919b0dc83b7735a9"
+const getFirebaseConfig = () => {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    try {
+      const config = JSON.parse(__firebase_config);
+      if (config && config.apiKey) return config;
+    } catch (e) { console.error("Firebase config parse error:", e); }
+  }
+  return {
+    apiKey: "AIzaSyDEw9TJCXWJlAoDgc1X1XCMl0LMKxrzLgg",
+    authDomain: "duty-manager-33163.firebaseapp.com",
+    projectId: "duty-manager-33163",
+    storageBucket: "duty-manager-33163.firebasestorage.app",
+    messagingSenderId: "709632134796",
+    appId: "1:709632134796:web:62292d919b0dc83b7735a9",
+    measurementId: "G-S05NOL39E0"
+  };
 };
 
+const firebaseConfig = getFirebaseConfig();
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
@@ -154,14 +164,12 @@ export default function App() {
   const rebalanceFutureEvents = async (currentMembersList, currentEventsList) => {
     if (!user) return;
     
-    // 未完了の予定を日付順に取得
     const futureEvents = currentEventsList.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date));
     if (futureEvents.length === 0) return;
 
     const activeM = currentMembersList.filter(m => m.active);
     if (activeM.length === 0) return;
 
-    // 各メンバーの完了済み回数を初期値として設定
     const virtualCounts = {};
     const lastAssignedDates = {};
     
@@ -170,7 +178,6 @@ export default function App() {
       lastAssignedDates[m.id] = 0; 
     });
 
-    // 完了済みの予定から、直近の担当日を取得して間隔の計算に使う
     const completedEvents = currentEventsList.filter(e => e.completed);
     completedEvents.forEach(e => {
       const time = new Date(e.date).getTime();
@@ -182,13 +189,12 @@ export default function App() {
     });
 
     for (const ev of futureEvents) {
-      // その時点の仮想カウントと前回担当日を元にソート
       const available = [...activeM].sort((a, b) => {
         if (virtualCounts[a.id] !== virtualCounts[b.id]) {
-          return virtualCounts[a.id] - virtualCounts[b.id]; // 回数が少ない人を優先
+          return virtualCounts[a.id] - virtualCounts[b.id]; 
         }
         if (lastAssignedDates[a.id] !== lastAssignedDates[b.id]) {
-          return lastAssignedDates[a.id] - lastAssignedDates[b.id]; // 最後に担当した日が古い人を優先
+          return lastAssignedDates[a.id] - lastAssignedDates[b.id]; 
         }
         return a.id.localeCompare(b.id);
       });
@@ -196,7 +202,6 @@ export default function App() {
       const selected = available.slice(0, ev.numSets);
       const evTime = new Date(ev.date).getTime();
       
-      // 選ばれた人の仮想カウントと最終担当日を更新
       selected.forEach(m => { 
         virtualCounts[m.id] += 1; 
         lastAssignedDates[m.id] = evTime;
@@ -204,9 +209,11 @@ export default function App() {
 
       const currentIdsStr = (ev.assignedIds || []).join(',');
       const newIdsStr = selected.map(m => m.id).join(',');
+      const currentNamesStr = (ev.assignedNames || []).join(',');
+      const newNamesStr = selected.map(m => m.name).join(',');
 
-      // 担当者が変わる場合のみDBを更新
-      if (currentIdsStr !== newIdsStr) {
+      // 担当者が変わる場合、または「名前」が変更された場合はDBを更新する
+      if (currentIdsStr !== newIdsStr || currentNamesStr !== newNamesStr) {
         await updateDoc(getDocRef('events', ev.id), {
           assignedIds: selected.map(m => m.id),
           assignedNames: selected.map(m => m.name)
@@ -229,7 +236,6 @@ export default function App() {
     const docRef = await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
     e.target.reset();
 
-    // 新規入会者を含めて全体を再計算
     const newMember = { id: docRef.id, name, count: initialCount, active: true };
     await rebalanceFutureEvents([...members, newMember], events);
   };
@@ -241,41 +247,47 @@ export default function App() {
     const newName = editMemberName.trim();
     const newCount = parseInt(editMemberCount) || 0;
 
-    await updateDoc(getDocRef('members', editingMemberId), { 
-      name: newName, 
-      count: newCount 
-    });
-
-    // 既に作成されている予定（履歴や今後の予定）の担当者名も一括で書き換える
-    const eventsToUpdate = events.filter(ev => ev.assignedIds && ev.assignedIds.includes(editingMemberId));
-    const updatedEvents = [...events];
-    
-    for (const ev of eventsToUpdate) {
-      const newAssignedNames = ev.assignedNames.map((n, idx) => 
-        ev.assignedIds[idx] === editingMemberId ? newName : n
-      );
-      await updateDoc(getDocRef('events', ev.id), {
-        assignedNames: newAssignedNames
+    try {
+      // 1. メンバー情報を更新
+      await updateDoc(getDocRef('members', editingMemberId), { 
+        name: newName, 
+        count: newCount 
       });
-      
-      const evIndex = updatedEvents.findIndex(e => e.id === ev.id);
-      if (evIndex !== -1) {
-        updatedEvents[evIndex] = { ...ev, assignedNames: newAssignedNames };
-      }
+
+      // 2. このメンバーが含まれる「すべてのイベント（履歴も含む）」の名前を一気に書き換える
+      const eventsToUpdate = events.filter(ev => ev.assignedIds && ev.assignedIds.includes(editingMemberId));
+      const updatedEvents = [...events];
+
+      await Promise.all(eventsToUpdate.map(async (ev) => {
+        const newAssignedNames = ev.assignedNames.map((n, idx) => 
+          ev.assignedIds[idx] === editingMemberId ? newName : n
+        );
+        
+        await updateDoc(getDocRef('events', ev.id), {
+          assignedNames: newAssignedNames
+        });
+        
+        // ローカルステート用にも反映
+        const evIndex = updatedEvents.findIndex(e => e.id === ev.id);
+        if (evIndex !== -1) {
+          updatedEvents[evIndex] = { ...ev, assignedNames: newAssignedNames };
+        }
+      }));
+
+      // 3. 最新の状態で未来の予定を再計算
+      const updatedMembers = members.map(m => m.id === editingMemberId ? { ...m, name: newName, count: newCount } : m);
+      await rebalanceFutureEvents(updatedMembers, updatedEvents);
+
+      setEditingMemberId(null);
+    } catch (err) {
+      console.error(err);
+      setModal({ open: true, title: 'エラー', content: '更新中にエラーが発生しました。', onConfirm: null });
     }
-
-    setEditingMemberId(null);
-
-    // 名前や回数が変わったので再計算
-    const updatedMembers = members.map(m => m.id === editingMemberId ? { ...m, name: newName, count: newCount } : m);
-    await rebalanceFutureEvents(updatedMembers, updatedEvents);
   };
 
   const handleToggleMember = async (m) => {
     if (!user) return;
     await updateDoc(getDocRef('members', m.id), { active: !m.active });
-    
-    // 休止/復帰によって名簿状態が変わるので再計算
     const updatedMembers = members.map(member => member.id === m.id ? { ...member, active: !m.active } : member);
     await rebalanceFutureEvents(updatedMembers, events);
   };
@@ -284,8 +296,6 @@ export default function App() {
     if (!user) return;
     if (confirm(`${m.name}さんを名簿から削除（退会）しますか？\n※未完了の予定からは自動的に外れ、他の人が割り当てられます。過去の履歴には名前が残ります。`)) {
       await deleteDoc(getDocRef('members', m.id));
-      
-      // 退会した人を除外して再計算
       const updatedMembers = members.filter(member => member.id !== m.id);
       await rebalanceFutureEvents(updatedMembers, events);
     }
@@ -303,14 +313,12 @@ export default function App() {
       return;
     }
 
-    // まずは空の枠として予定を追加する
     const docRef = await addDoc(getColRef('events'), { 
       date, numSets: sets, 
       assignedIds: [], assignedNames: [], 
       completed: false, createdAt: new Date().toISOString() 
     });
 
-    // 新しい予定を含めて、全体を通して公平に再割り当てを実行
     const newEvent = { id: docRef.id, date, numSets: sets, assignedIds: [], assignedNames: [], completed: false };
     await rebalanceFutureEvents(members, [...events, newEvent]);
 
@@ -366,10 +374,9 @@ export default function App() {
           newEvents.push({ id: docRef.id, date: d, numSets: sets, assignedIds: [], assignedNames: [], completed: false });
         }
         
-        // 全体をリバランス
         await rebalanceFutureEvents(members, [...events, ...newEvents]);
-        
-        setIsScheduleFormOpen(false); closeModal();
+        setIsScheduleFormOpen(false); 
+        closeModal();
       }
     });
   };
@@ -387,7 +394,6 @@ export default function App() {
         for (const id of selectedEventIds) {
           await deleteDoc(getDocRef('events', id));
         }
-        
         const remainingEvents = events.filter(e => !selectedEventIds.includes(e.id));
         await rebalanceFutureEvents(members, remainingEvents);
         
@@ -403,6 +409,7 @@ export default function App() {
     const otherInEvent = event.assignedIds.filter((_, i) => i !== index);
     const futureEvents = events.filter(e => !e.completed && e.id !== event.id).sort((a,b) => new Date(a.date) - new Date(b.date));
     let candidates = [];
+    
     futureEvents.forEach(fe => {
       fe.assignedIds.forEach((id, feIdx) => {
         if (id !== absentId && !otherInEvent.includes(id)) {
@@ -412,11 +419,13 @@ export default function App() {
         }
       });
     });
+    
     const allAssigned = events.filter(e => !e.completed).flatMap(e => e.assignedIds);
     const unassigned = members.filter(m => m.active && !allAssigned.includes(m.id) && m.id !== absentId && !otherInEvent.includes(m.id));
     unassigned.sort((a,b) => (a.count || 0) - (b.count || 0)).forEach(m => {
       if (!candidates.find(c => c.memberId === m.id)) candidates.push({ type: 'replace', memberId: m.id, memberName: m.name, count: m.count || 0 });
     });
+    
     setSlideModal({ open: true, event, index, absentName, candidates: candidates.slice(0, 3) });
   };
 
@@ -746,7 +755,7 @@ export default function App() {
               {members.map(m => (
                 <div key={m.id} className={`p-5 rounded-[2.5rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm border-slate-100' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   {editingMemberId === m.id ? (
-                    <form onSubmit={handleUpdateMember} className="flex gap-2 items-center w-full animate-in fade-in duration-300">
+                    <form onSubmit={handleEditMember} className="flex gap-2 items-center w-full animate-in fade-in duration-300">
                       <input type="text" value={editMemberName} onChange={e => setEditMemberName(e.target.value)} className="flex-1 p-3 rounded-xl border border-indigo-200 font-black outline-none font-black" autoFocus />
                       <input type="number" value={editMemberCount} onChange={e => setEditMemberCount(e.target.value)} className="w-20 p-3 rounded-xl border border-indigo-200 font-black text-center font-black" />
                       <button type="submit" className="bg-indigo-600 text-white p-3 rounded-xl"><IconPlus /></button>
