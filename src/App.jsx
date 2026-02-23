@@ -43,7 +43,7 @@ const firebaseApp = getApps().length === 0 ? initializeApp(getFirebaseConfig()) 
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// appIdからスラッシュを除去（Firebaseのパス制約回避）
+// appIdからスラッシュを除去（Firebaseの階層数エラー防止）
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-final';
 const appId = String(rawAppId).replace(/\//g, '_');
 
@@ -85,7 +85,9 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証に失敗しました。FirebaseのAuthorized Domains設定に、このサイトのドメイン（my-duty-app.vercel.appなど）が追加されているか確認してください。");
+        // 現在のドメインを表示して、追加すべきURLを教える
+        const currentDomain = window.location.hostname;
+        setErrorMsg(`認証エラーが発生しました。Firebaseコンソールの設定 ＞ 承認済みドメインに、以下のURLを追加してください：\n\n${currentDomain}\n\n(Code: ${error.code})`);
       }
     };
     initAuth();
@@ -101,7 +103,7 @@ export default function App() {
     };
   }, []);
 
-  // 2. 団体一覧の取得 (管理者認証済み、かつ部屋IDがない場合のみ実行)
+  // 2. 団体一覧の取得 (管理者認証済み かつ 部屋ID未選択時)
   useEffect(() => {
     if (!user || groupId || !isAdminAuthenticated) return;
     
@@ -117,7 +119,7 @@ export default function App() {
     return () => unsub();
   }, [user, groupId, isAdminAuthenticated]);
 
-  // 3. 部屋別データの同期 (部屋IDがある場合は即座に実行 = URL共有者向け)
+  // 3. 部屋別データの同期 (部屋IDがある場合 = 共有URL踏んだ人 または 管理者)
   useEffect(() => {
     if (!user || !groupId) {
       if (!groupId) setLoading(false); 
@@ -232,9 +234,9 @@ export default function App() {
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center animate-in zoom-in-95">
-        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続エラー</h2>
+        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 認証に失敗しました</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap font-bold">{errorMsg}</p>
-        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg">再読み込み</button>
+        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg">再読み込みして確認</button>
       </div>
     </div>
   );
@@ -255,9 +257,7 @@ export default function App() {
           <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight uppercase font-black">ADMIN LOCK</h1>
           <p className="text-slate-400 text-sm mb-8 leading-relaxed font-bold">管理者用パスワードを入力してください</p>
           <input 
-            type="password" 
-            placeholder="Password"
-            value={adminPassInput}
+            type="password" placeholder="Password" value={adminPassInput}
             onChange={(e) => setAdminPassInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && checkAdminAuth()}
             className="w-full p-5 rounded-2xl bg-slate-50 border-none ring-1 ring-slate-200 font-bold text-center text-xl mb-6 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
@@ -278,7 +278,7 @@ export default function App() {
     );
   }
 
-  // --- 管理者専用：団体一覧・作成画面 ---
+  // --- 管理者専用：団体一覧画面 ---
   if (!groupId && isAdminAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
@@ -299,10 +299,7 @@ export default function App() {
                       <span className="text-indigo-900 truncate font-black">{String(g.name)}</span><IconChevronRight />
                     </button>
                     <button onClick={() => {
-                      setModal({
-                        open: true, title: "部屋の削除", content: `「${g.name}」を完全に削除しますか？\n中身のデータも全て消去されます。`,
-                        onConfirm: async () => { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', g.id)); setModal({...modal, open: false}); }
-                      });
+                      setModal({ open: true, title: "部屋の削除", content: `「${g.name}」を完全に削除しますか？\n中身のデータも全て消去されます。`, onConfirm: async () => { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', g.id)); setModal({...modal, open: false}); } });
                     }} className="p-5 bg-red-50 text-red-300 hover:text-red-500 rounded-2xl transition-all shadow-sm"><IconTrash /></button>
                   </div>
                 ))}
@@ -315,14 +312,14 @@ export default function App() {
                 <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg active:scale-95 transition-all">作成</button>
               </form>
             </div>
-            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500">Log out Admin</button>
+            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500 transition-colors">Logout Admin Session</button>
           </div>
         </div>
         {modal.open && (
           <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95">
+            <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
               <h3 className="text-xl font-black mb-4">{modal.title}</h3>
-              <p className="text-slate-600 mb-6 font-bold">{modal.content}</p>
+              <p className="text-slate-600 mb-6 whitespace-pre-wrap leading-relaxed font-bold">{modal.content}</p>
               <div className="flex gap-2">
                  <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">中止</button>
                  <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-red-600 bg-red-50 rounded-xl">削除</button>
@@ -373,14 +370,14 @@ export default function App() {
                   return (
                     <div className="space-y-6">
                       <div className="text-3xl font-black text-slate-800">{formatDate(next.date)}</div>
-                      <div className="flex flex-wrap justify-center gap-2 mt-4">
+                      <div className="flex flex-wrap justify-center gap-2 mt-4 px-2">
                         {(next.assignedNames || []).map((name, i) => (
                           <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg">
                             <span className="text-2xl font-bold">{String(name)} さん</span>
                           </div>
                         ))}
                       </div>
-                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl active:scale-95 transition-all mt-6">完了</button>
+                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl active:scale-95 transition-all mt-6 shadow-emerald-50">完了</button>
                     </div>
                   );
                 })()
@@ -393,7 +390,7 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
             {!isScheduleFormOpen ? (
               <div className="space-y-4">
-                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><IconPlus /> 予定を追加</button>
+                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all shadow-indigo-50"><IconPlus /> 予定を追加</button>
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
                   <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
                     <div className="max-w-[70%]">
@@ -401,10 +398,7 @@ export default function App() {
                       <div className="text-xs font-bold text-indigo-500 uppercase mt-1 truncate">担当: {(e.assignedNames || []).join(', ')}</div>
                     </div>
                     <button onClick={async () => { 
-                      setModal({
-                        open: true, title: "予定の削除", content: "消去しますか？",
-                        onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); }
-                      });
+                      setModal({ open: true, title: "予定の削除", content: "消去しますか？", onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } });
                     }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 ))}
@@ -416,7 +410,7 @@ export default function App() {
                 <form onSubmit={handleProcessEvent} className="space-y-6">
                   <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" defaultValue={new Date().toISOString().split('T')[0]} /></div>
                   <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">登録して自動決定</button>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all shadow-indigo-50">登録して自動決定</button>
                 </form>
               </div>
             )}
@@ -427,26 +421,18 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-left-4 duration-500">
             <form onSubmit={handleAddMember} className="flex gap-2 p-2 bg-white rounded-3xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
               <input name="memberName" type="text" placeholder="名前を追加" className="flex-1 bg-transparent px-4 font-bold outline-none" />
-              <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl active:scale-95 shadow-md"><IconPlus /></button>
+              <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl active:scale-95 shadow-md shadow-indigo-50"><IconPlus /></button>
             </form>
             <div className="space-y-3">
               {members.map(m => (
                 <div key={m.id} className={`p-4 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm border-slate-100' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{String(m.name).charAt(0)}</div>
-                    <div>
-                      <div className="font-bold text-lg">{String(m.name)} さん</div>
-                      <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest font-black">回数: {m.count || 0}</div>
-                    </div>
+                    <div><div className="font-bold text-lg">{String(m.name)} <span className="text-sm font-normal opacity-60">さん</span></div><div className="text-xs text-indigo-500 font-bold uppercase tracking-widest font-black">回数: {m.count || 0}</div></div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
-                    <button onClick={async () => { 
-                      setModal({
-                        open: true, title: "名簿の削除", content: `${m.name}さんを削除しますか？`,
-                        onConfirm: async () => { await deleteDoc(getDocRef('members', m.id)); setModal({...modal, open: false}); }
-                      });
-                    }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors font-black">{m.active ? '休止' : '復帰'}</button>
+                    <button onClick={async () => { setModal({ open: true, title: "名簿の削除", content: `${m.name}さんを削除しますか？`, onConfirm: async () => { await deleteDoc(getDocRef('members', m.id)); setModal({...modal, open: false}); } }); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 </div>
               ))}
@@ -456,44 +442,23 @@ export default function App() {
 
         {activeTab === 'settings' && (
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
-            <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">App Settings</h3>
+            <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center font-black">設定</h3>
             <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
-                <input type="text" value={settings.appName} onChange={async (e) => { 
-                  const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); 
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); 
-                  if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
-                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
-              </div>
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
+              <input type="text" value={settings.appName} onChange={async (e) => { const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
               
-              {/* 当番の名称設定を復活 */}
-              <div>
-                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
-                <input type="text" value={settings.taskName} onChange={async (e) => { 
-                  const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); 
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); 
-                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
-              </div>
-              
-              <div className="pt-6 border-t border-slate-100">
-                <button onClick={() => { 
-                    setAdminPassInput(""); 
-                    setIsAdminAuthenticated(false);
-                    window.location.hash = ''; 
-                    setGroupId(null); 
-                    setActiveTab('home'); 
-                }} className="w-full bg-slate-100 text-slate-500 font-black py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors uppercase text-[10px] tracking-widest font-black">
-                  <IconLogOut /> 別の部屋を選ぶ (管理者パスが必要)
-                </button>
-              </div>
+              {/* 当番の名称設定を表示 */}
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
+              <input type="text" value={settings.taskName} onChange={async (e) => { const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
+
+              <div className="pt-6 border-t border-slate-100"><button onClick={() => { setAdminPassInput(""); setIsAdminAuthenticated(false); window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-black py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors uppercase text-[10px] tracking-widest font-black"><IconLogOut /> 部屋を選び直す (管理者パスが必要)</button></div>
             </div>
-            <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">完了</button>
+            <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all shadow-slate-200">完了</button>
           </div>
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-100 flex justify-around items-center px-6 py-4 z-50 max-w-md mx-auto rounded-t-[2.5rem] shadow-2xl">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-100 flex justify-around items-center px-6 py-5 z-50 max-w-md mx-auto rounded-t-[2.5rem] shadow-2xl">
         <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'home' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconHome /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">履歴</span></button>
         <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'schedule' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconCalendar /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">予定</span></button>
         <button onClick={() => setActiveTab('members')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'members' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconUsers /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">名簿</span></button>
