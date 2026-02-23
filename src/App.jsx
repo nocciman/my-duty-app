@@ -29,13 +29,15 @@ const getFirebaseConfig = () => {
       console.error("Firebase config parse error", e);
     }
   }
+  // --- 修正箇所：提供された正しいAPIキーに完全に一致させました ---
   return {
-    apiKey: "AIzaSyDEw9TJCXWJlAoDgc1XlXCMl0LMKxrzLgg",
+    apiKey: "AIzaSyDEw9TJCXWJlAoDgc1X1XCMl0LMKxrzLgg",
     authDomain: "duty-manager-33163.firebaseapp.com",
     projectId: "duty-manager-33163",
     storageBucket: "duty-manager-33163.firebasestorage.app",
     messagingSenderId: "709632134796",
-    appId: "1:709632134796:web:62292d919b0dc83b7735a9"
+    appId: "1:709632134796:web:62292d919b0dc83b7735a9",
+    measurementId: "G-S05NOL39E0"
   };
 };
 
@@ -43,7 +45,7 @@ const firebaseApp = getApps().length === 0 ? initializeApp(getFirebaseConfig()) 
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// appIdの無害化：スラッシュやドットをアンダースコアに置換し、Firebaseのパス制約をクリアする
+// appIdの無害化
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-final';
 const appId = String(rawAppId).replace(/[^a-zA-Z0-9]/g, '_');
 
@@ -73,7 +75,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. 認証の初期化
+  // 1. Firebase 認証
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -84,9 +86,8 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        // エラーが発生した場合、現在のドメインを画面に出して追加を促す
         const currentDomain = window.location.hostname;
-        setErrorMsg(`認証エラーが発生しました。Vercel側で「Visit」ボタンを押した先のURLをFirebaseの「承認済みドメイン」へ追加してください。\n\n追加すべきURL：\n${currentDomain}\n\n(Error: ${error.code})`);
+        setErrorMsg(`認証に失敗しました。APIキーが無効か、承認済みドメインが不足しています。\n\n現在のドメイン：\n${currentDomain}\n\n(Error: ${error.code})`);
       }
     };
     initAuth();
@@ -102,7 +103,7 @@ export default function App() {
     };
   }, []);
 
-  // 2. 団体一覧の取得 (管理者認証済み かつ 部屋ID未選択時)
+  // 2. 団体一覧の取得 (管理者のみ)
   useEffect(() => {
     if (!user || groupId || !isAdminAuthenticated) return;
     
@@ -112,7 +113,7 @@ export default function App() {
       setLoading(false);
     }, (err) => {
       console.error("Firestore groups error:", err);
-      if (err.code === 'permission-denied') setErrorMsg("権限エラー。ルールの公開を確認してください。");
+      if (err.code === 'permission-denied') setErrorMsg("権限エラー。ルールの公開設定を確認してください。");
       setLoading(false);
     });
     return () => unsub();
@@ -169,7 +170,7 @@ export default function App() {
       e.target.reset();
       window.location.hash = newGroupId;
     } catch (e) {
-      setModal({ open: true, title: "エラー", content: "作成に失敗しました。" });
+      setModal({ open: true, title: "エラー", content: "保存に失敗しました。" });
     }
   };
 
@@ -233,7 +234,7 @@ export default function App() {
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center animate-in zoom-in-95">
-        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続に失敗しました</h2>
+        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ エラーが発生しました</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap font-bold">{errorMsg}</p>
         <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg">再読み込みして確認</button>
       </div>
