@@ -84,8 +84,9 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
+        // エラーが発生した場合、現在のドメインを画面に出して追加を促す
         const currentDomain = window.location.hostname;
-        setErrorMsg(`認証エラーが発生しました。\n\nFirebaseコンソールの Authentication ＞ 設定 ＞ 承認済みドメイン に、以下の文字列を【追加】してください：\n\n${currentDomain}\n\n(Error: ${error.code})`);
+        setErrorMsg(`認証エラーが発生しました。Vercel側で「Visit」ボタンを押した先のURLをFirebaseの「承認済みドメイン」へ追加してください。\n\n追加すべきURL：\n${currentDomain}\n\n(Error: ${error.code})`);
       }
     };
     initAuth();
@@ -232,7 +233,7 @@ export default function App() {
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center animate-in zoom-in-95">
-        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 認証に失敗しました</h2>
+        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続に失敗しました</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap font-bold">{errorMsg}</p>
         <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg">再読み込みして確認</button>
       </div>
@@ -329,7 +330,7 @@ export default function App() {
     );
   }
 
-  // --- メインアプリ画面 ---
+  // --- メインアプリ画面 (URL共有された人はここが表示される) ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative overflow-x-hidden">
       {modal.open && (
@@ -388,7 +389,7 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
             {!isScheduleFormOpen ? (
               <div className="space-y-4">
-                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all shadow-indigo-50"><IconPlus /> 予定を追加</button>
+                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all shadow-indigo-100"><IconPlus /> 予定を追加</button>
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
                   <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
                     <div className="max-w-[70%]">
@@ -484,8 +485,8 @@ export default function App() {
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-100 flex justify-around items-center px-6 py-5 z-50 max-w-md mx-auto rounded-t-[2.5rem] shadow-2xl">
         <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'home' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconHome /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">履歴</span></button>
-        <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'schedule' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconCalendar /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">予定</span></button>
-        <button onClick={() => setActiveTab('members')} className={`flex flex-col items-center gap-2 transition-all ${activeTab === 'members' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconUsers /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">名簿</span></button>
+        <button onClick={() => setActiveTab('schedule')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'schedule' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconCalendar /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">予定</span></button>
+        <button onClick={() => setActiveTab('members')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'members' ? 'text-indigo-600 scale-110' : 'text-slate-300'}`}><IconUsers /><span className="text-[9px] font-black uppercase tracking-widest leading-none font-black">名簿</span></button>
       </nav>
     </div>
   );
