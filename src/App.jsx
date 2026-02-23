@@ -17,13 +17,13 @@ const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="non
 
 // --- Firebase Configuration ---
 const getFirebaseConfig = () => {
-  // プレビュー環境でのみシステム変数を優先
-  if (window.location.hostname.includes('usercontent.goog') && typeof __firebase_config !== 'undefined') {
+  // プレビュー環境（Canvas）でのみシステム変数を優先
+  if (typeof window !== 'undefined' && window.location.hostname.includes('usercontent.goog') && typeof __firebase_config !== 'undefined') {
     return JSON.parse(__firebase_config);
   }
-  // --- あなたのFirebase情報 ---
+  // --- あなたのFirebase情報 (最新の提供に基づき修正済み) ---
   return {
-    apiKey: "AIzaSyDEw9TJCXWJiAoDgc1XlXCMIOLMKxrzLgg",
+    apiKey: "AIzaSyDEw9TJCXWJlAoDgc1X1XCMl0LMKxrzLgg",
     authDomain: "duty-manager-33163.firebaseapp.com",
     projectId: "duty-manager-33163",
     storageBucket: "duty-manager-33163.firebasestorage.app",
@@ -75,7 +75,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証エラー: FirebaseのAuthenticationで「匿名ログイン」が有効か確認してください。\n(Code: " + error.code + ")");
+        setErrorMsg("認証エラー: Firebaseの設定情報を確認してください。\n(Code: " + error.code + ")");
       }
     };
     initAuth();
@@ -101,7 +101,7 @@ export default function App() {
     }, (err) => {
       console.error("Firestore groups error:", err);
       if (err.code === 'permission-denied') {
-        setErrorMsg("権限エラー: Firestoreの「ルール」で青い公開ボタンが押されているか確認してください。");
+        setErrorMsg("権限エラー: Firestoreの「ルール」で公開設定が正しく行われているか確認してください。");
       }
       setLoading(false);
     });
