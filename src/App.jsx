@@ -1,26 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query } from 'firebase/firestore';
 
 // --- アイコンコンポーネント (SVG) ---
 const IconHome = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/><path d="M12 7v5l3 3"/></svg>;
 const IconCalendar = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>;
 const IconUsers = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>;
-const IconSettings = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>;
+const IconSettings = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>;
 const IconTrash = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>;
 const IconPlus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconClose = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconChevronRight = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
 const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const IconSlide = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>;
 
-// --- Firebase Configuration ---
+// --- 管理者パスワードの設定 ---
+const MASTER_ADMIN_PASSCODE = "2525"; 
+
+// --- Firebase Configuration Logic ---
 const getFirebaseConfig = () => {
-  if (typeof window !== 'undefined' && window.location.hostname.includes('usercontent.goog') && typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
+  // 1. プレビュー環境(Canvas)の変数を最優先する
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    try {
+      return JSON.parse(__firebase_config);
+    } catch (e) {
+      console.error("Firebase config parse error", e);
+    }
   }
+  // 2. 本番環境(Vercel)用のハードコード設定
   return {
     apiKey: "AIzaSyDEw9TJCXWJlAoDgc1XlXCMl0LMKxrzLgg",
     authDomain: "duty-manager-33163.firebaseapp.com",
@@ -32,10 +40,12 @@ const getFirebaseConfig = () => {
   };
 };
 
-const app = getApps().length === 0 ? initializeApp(getFirebaseConfig()) : getApps()[0];
+// Initialize Firebase services outside the component
+const firebaseConfig = getFirebaseConfig();
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-final-production';
+const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-v2-production';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -46,6 +56,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
+
+  // 管理者認証状態
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminPassInput, setAdminPassInput] = useState("");
 
   const [settings, setSettings] = useState({ appName: "当番管理", taskName: "用具" });
   const [modal, setModal] = useState({ open: false, title: '', content: '', onConfirm: null });
@@ -63,6 +77,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
+  // 1. Auth & Hash listener
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -73,13 +88,15 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証エラー: Firebaseの設定情報を確認してください。\n(Code: " + error.code + ")");
+        setErrorMsg(`認証エラーが発生しました。FirebaseのAPIキー設定を再確認してください。\n(Code: ${error.code})`);
       }
     };
     initAuth();
+
     const handleHashChange = () => setGroupId(window.location.hash.replace('#', '') || null);
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
+    
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => {
       unsubscribe();
@@ -87,6 +104,7 @@ export default function App() {
     };
   }, []);
 
+  // 2. Public Data - Group List (Admin only view if no groupId)
   useEffect(() => {
     if (!user) return;
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
@@ -94,15 +112,16 @@ export default function App() {
       setGroupList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
       if (!groupId) setLoading(false);
     }, (err) => {
-      console.error("Firestore groups error:", err);
-      if (err.code === 'permission-denied') {
-        setErrorMsg("権限エラー: Firestoreの「ルール」で公開設定が正しく行われているか確認してください。");
-      }
-      setLoading(false);
+        console.error("Firestore groups error:", err);
+        if (err.code === 'permission-denied') {
+            setErrorMsg("データ取得権限がありません。Firestoreのルール設定を確認してください。");
+        }
+        setLoading(false);
     });
     return () => unsub();
   }, [user, groupId]);
 
+  // 3. Room Specific Data
   useEffect(() => {
     if (!user || !groupId) return;
     setLoading(true);
@@ -114,7 +133,7 @@ export default function App() {
     const unsubM = onSnapshot(membersCol, (s) => {
       setMembers(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.count || 0) - (b.count || 0)));
       setLoading(false);
-    }, (err) => setLoading(false));
+    }, () => setLoading(false));
     const unsubE = onSnapshot(eventsCol, (s) => {
       setEvents(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date) - new Date(a.date)));
     });
@@ -184,10 +203,18 @@ export default function App() {
     });
   };
 
+  const checkAdminAuth = () => {
+    if (adminPassInput === MASTER_ADMIN_PASSCODE) {
+      setIsAdminAuthenticated(true);
+    } else {
+      setModal({ open: true, title: "認証失敗", content: "管理者パスワードが正しくありません。", onConfirm: null });
+    }
+  };
+
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center">
-        <h2 className="text-red-600 font-black text-xl mb-4">⚠️ 接続エラー</h2>
+        <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続エラー</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{errorMsg}</p>
         <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みする</button>
       </div>
@@ -201,42 +228,102 @@ export default function App() {
     </div>
   );
 
+  // --- 管理者ロック画面 (ハッシュがない時のみ表示) ---
   if (!groupId) {
+    if (!isAdminAuthenticated) {
+      return (
+        <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
+          <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-300">
+            <div className="text-5xl mb-6">🔒</div>
+            <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight">ADMIN LOCK</h1>
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed">管理者パネルを表示するには<br/>パスワードを入力してください</p>
+            <input 
+              type="password" 
+              placeholder="パスワード"
+              value={adminPassInput}
+              onChange={(e) => setAdminPassInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && checkAdminAuth()}
+              className="w-full p-5 rounded-2xl bg-slate-50 border-none ring-1 ring-slate-200 font-bold text-center text-xl mb-6 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+            />
+            <button 
+              onClick={checkAdminAuth}
+              className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 active:scale-95 transition-all"
+            >
+              認証する
+            </button>
+          </div>
+          {modal.open && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+              <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl">
+                <h3 className="text-xl font-black mb-4">{modal.title}</h3>
+                <p className="text-slate-600 mb-6">{modal.content}</p>
+                <button onClick={closeModal} className="w-full py-4 font-bold text-indigo-600">閉じる</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 管理画面 (部屋の作成・削除)
     return (
       <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
-        <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden">
           <div className="text-center mb-10">
             <div className="text-5xl mb-2">📋</div>
-            <h1 className="text-3xl font-black text-indigo-600">DUTY MANAGER</h1>
+            <h1 className="text-3xl font-black text-indigo-600 tracking-tighter">DUTY MANAGER</h1>
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-2 bg-slate-50 py-1 rounded-full inline-block px-4">Admin Dashboard</p>
           </div>
           <div className="space-y-8">
             <div>
-              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">部屋に入る</h3>
-              <div className="space-y-3">
+              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">作成済みの部屋 (団体)</h3>
+              <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                 {groupList.map(g => (
-                  <button key={g.id} onClick={() => window.location.hash = g.id} className="w-full p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm group hover:border-indigo-500 transition-all">
-                    <span className="text-indigo-900">{g.name}</span><IconChevronRight />
-                  </button>
+                  <div key={g.id} className="flex gap-2 group">
+                    <button onClick={() => window.location.hash = g.id} className="flex-1 p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm hover:border-indigo-500 transition-all overflow-hidden">
+                      <span className="text-indigo-900 truncate">{g.name}</span><IconChevronRight />
+                    </button>
+                    <button onClick={() => {
+                      setModal({
+                        open: true, title: "部屋の削除", content: `「${g.name}」を完全に削除しますか？\n中身のデータも全て消去されます。`,
+                        onConfirm: async () => { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', g.id)); setModal({...modal, open: false}); }
+                      });
+                    }} className="p-5 bg-red-50 text-red-300 hover:text-red-500 rounded-2xl transition-all shadow-sm"><IconTrash /></button>
+                  </div>
                 ))}
               </div>
             </div>
             <div className="pt-8 border-t border-slate-100">
-              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">新しい部屋を作る</h3>
+              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">新しい団体を追加</h3>
               <form onSubmit={handleCreateGroup} className="flex gap-2">
                 <input name="groupName" placeholder="団体名を入力" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500" required />
-                <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg">作成</button>
+                <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg active:scale-95 transition-all">作成</button>
               </form>
             </div>
+            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500 transition-colors">Logout Admin Session</button>
           </div>
         </div>
+        {modal.open && (
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+              <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
+                <h3 className="text-xl font-black mb-4">{modal.title}</h3>
+                <p className="text-slate-600 mb-6 whitespace-pre-wrap leading-relaxed">{modal.content}</p>
+                <div className="flex gap-2">
+                   <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">いいえ</button>
+                   <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-red-600 bg-red-50 rounded-xl">削除する</button>
+                </div>
+              </div>
+            </div>
+          )}
       </div>
     );
   }
 
+  // --- メインアプリ画面 (ハッシュURLから直接アクセスした場合) ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative">
       {modal.open && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-[2rem] w-full max-w-xs overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in-95">
             <h3 className="text-2xl font-black mb-4">{modal.title}</h3>
             <p className="text-slate-600 mb-6">{modal.content}</p>
@@ -253,7 +340,7 @@ export default function App() {
       )}
 
       <header className="bg-white border-b border-slate-200 px-6 py-5 sticky top-0 z-40 flex justify-between items-center shadow-sm">
-        <div>
+        <div className="flex flex-col">
           <h1 className="text-xl font-black truncate max-w-[200px] tracking-tight">{settings.appName}</h1>
           <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest leading-none mt-1">{settings.taskName}当番</p>
         </div>
@@ -273,31 +360,17 @@ export default function App() {
                       <div className="text-3xl font-black text-slate-800">{formatDate(next.date)}</div>
                       <div className="flex flex-wrap justify-center gap-2 mt-4">
                         {next.assignedNames.map((name, i) => (
-                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg shadow-indigo-100">
+                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg">
                             <span className="text-2xl font-bold">{name} さん</span>
                           </div>
                         ))}
                       </div>
-                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl shadow-emerald-100 active:scale-95 transition-all mt-6">完了</button>
+                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl active:scale-95 transition-all mt-6">完了</button>
                     </div>
                   );
                 })()
-              ) : <p className="py-12 text-slate-400 font-bold italic text-center text-sm">予定なし</p>}
+              ) : <p className="py-12 text-slate-400 font-bold italic text-center">予定なし</p>}
             </div>
-            
-            <section className="space-y-4">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">履歴</h3>
-              <div className="space-y-3">
-                {events.filter(e => e.completed).slice(0, 5).map(e => (
-                  <div key={e.id} className="bg-white p-5 rounded-3xl border border-slate-100 flex justify-between items-center shadow-sm">
-                    <div>
-                      <div className="text-[10px] text-slate-400 font-bold mb-1">{formatDate(e.date)}</div>
-                      <div className="font-bold text-slate-700 text-lg">{e.assignedNames.join(', ')} さん</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         )}
 
@@ -305,28 +378,25 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
             {!isScheduleFormOpen ? (
               <div className="space-y-4">
-                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 active:scale-95 transition-all"><IconPlus /> 予定を追加</button>
+                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><IconPlus /> 予定を追加</button>
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
                   <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
                     <div>
                       <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
                       <div className="text-xs font-bold text-indigo-500 uppercase mt-1">担当: {e.assignedNames.join(', ')}</div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingEvent(e); setIsScheduleFormOpen(true); }} className="p-3 text-slate-300 hover:text-indigo-600"><IconEdit /></button>
-                      <button onClick={async () => { setModal({ open: true, title: '削除', content: '予定を消去します。', onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } }); }} className="p-3 text-slate-300 hover:text-red-500"><IconTrash /></button>
-                    </div>
+                    <button onClick={async () => { if(confirm('削除しますか？')) await deleteDoc(getDocRef('events', e.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 animate-in zoom-in-95 shadow-lg relative">
-                <button onClick={() => { setIsScheduleFormOpen(false); setEditingEvent(null); }} className="absolute top-6 right-6 p-2 text-slate-400 bg-slate-50 rounded-full transition-colors"><IconClose /></button>
-                <h3 className="font-black text-2xl mb-8">{editingEvent ? '予定の修正' : '新規予定の登録'}</h3>
+                <button onClick={() => setIsScheduleFormOpen(false)} className="absolute top-6 right-6 p-2 text-slate-400 bg-slate-50 rounded-full transition-colors"><IconClose /></button>
+                <h3 className="font-black text-2xl mb-8">新規予定の登録</h3>
                 <form onSubmit={handleProcessEvent} className="space-y-6">
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={editingEvent ? editingEvent.date : new Date().toISOString().split('T')[0]} /></div>
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={editingEvent ? editingEvent.numSets : 1}><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 active:scale-95 transition-all">{editingEvent ? '保存して自動更新' : '登録して自動決定'}</button>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={new Date().toISOString().split('T')[0]} /></div>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">登録して自動決定</button>
                 </form>
               </div>
             )}
@@ -336,25 +406,19 @@ export default function App() {
         {activeTab === 'members' && (
           <div className="space-y-6 animate-in slide-in-from-left-4 duration-500">
             <form onSubmit={handleAddMember} className="flex gap-2 p-2 bg-white rounded-3xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
-              <input name="memberName" type="text" placeholder="名前を追加" className="flex-1 bg-transparent px-5 font-bold outline-none" />
-              <button type="submit" className="bg-indigo-600 text-white p-5 rounded-2xl active:scale-95 shadow-md"><IconPlus /></button>
+              <input name="memberName" type="text" placeholder="名前を追加" className="flex-1 bg-transparent px-4 font-bold outline-none" />
+              <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl active:scale-95 shadow-md"><IconPlus /></button>
             </form>
             <div className="space-y-3">
               {members.map(m => (
                 <div key={m.id} className={`p-5 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm' : 'bg-slate-100 opacity-60'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{m.name.charAt(0)}</div>
-                    <div>
-                      <div className="font-bold text-lg flex items-center gap-2">
-                        {m.name} さん
-                        <button onClick={() => { setEditingMemberId(m.id); setEditMemberName(m.name); setEditMemberCount(m.count || 0); }} className="text-slate-300 hover:text-indigo-400"><IconEdit /></button>
-                      </div>
-                      <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest">回数: {m.count || 0}</div>
-                    </div>
+                    <div><div className="font-bold text-lg">{m.name} さん</div><div className="text-xs text-indigo-500 font-bold uppercase tracking-widest">回数: {m.count || 0}</div></div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleToggleMember(m)} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
-                    <button onClick={async () => { if(confirm(`${m.name}さんを削除？`)) await deleteDoc(getDocRef('members', m.id)); }} className="p-2 text-slate-200 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
+                    <button onClick={async () => { if(confirm(`${m.name}さんを削除？`)) await deleteDoc(getDocRef('members', m.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 </div>
               ))}
@@ -366,26 +430,22 @@ export default function App() {
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
             <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">設定</h3>
             <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前 (学年など)</label>
-                <input type="text" value={settings.appName} onChange={async (e) => { 
-                  const newName = e.target.value;
-                  const s = { ...settings, appName: newName }; 
-                  setSettings(s); 
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
-                  if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
-                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前</label><input type="text" value={settings.appName} onChange={async (e) => { 
+                const newName = e.target.value; const s = { ...settings, appName: newName }; setSettings(s); 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
+                if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+              }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" /></div>
+              <div className="pt-6 border-t border-slate-100">
+                <button onClick={() => { 
+                    setAdminPassInput(""); 
+                    setIsAdminAuthenticated(false);
+                    window.location.hash = ''; 
+                    setGroupId(null); 
+                    setActiveTab('home'); 
+                }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors">
+                  <IconLogOut /> 別の部屋を選ぶ (管理者認証が必要)
+                </button>
               </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">当番の項目名</label>
-                <input type="text" value={settings.taskName} onChange={async (e) => { 
-                  const newTaskName = e.target.value;
-                  const s = { ...settings, taskName: newTaskName }; 
-                  setSettings(s); 
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
-                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" />
-              </div>
-              <div className="pt-6 border-t border-slate-100"><button onClick={() => { window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors"><IconLogOut /> 部屋を選び直す</button></div>
             </div>
             <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-bold py-5 rounded-2xl shadow-xl active:scale-95 transition-all">完了</button>
           </div>
