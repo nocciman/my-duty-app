@@ -150,31 +150,62 @@ export default function App() {
   const getDocRef = (baseName, id) => doc(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`, id);
   const getColRef = (baseName) => collection(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`);
 
-  // --- 自動再計算ロジック ---
-  // 名簿に変更があった際、未完了の予定を公平な状態に再割り当てする
-  const autoReassignFutureEvents = async (currentMembersList, currentEventsList) => {
+  // --- 自動再計算ロジック（全体をリバランスする） ---
+  const rebalanceFutureEvents = async (currentMembersList, currentEventsList) => {
+    if (!user) return;
+    
+    // 未完了の予定を日付順に取得
     const futureEvents = currentEventsList.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date));
     if (futureEvents.length === 0) return;
 
     const activeM = currentMembersList.filter(m => m.active);
     if (activeM.length === 0) return;
 
-    // 現在の回数をベースにした「仮想カウント」
+    // 各メンバーの完了済み回数を初期値として設定
     const virtualCounts = {};
-    activeM.forEach(m => { virtualCounts[m.id] = m.count || 0; });
+    const lastAssignedDates = {};
+    
+    activeM.forEach(m => { 
+      virtualCounts[m.id] = m.count || 0; 
+      lastAssignedDates[m.id] = 0; 
+    });
+
+    // 完了済みの予定から、直近の担当日を取得して間隔の計算に使う
+    const completedEvents = currentEventsList.filter(e => e.completed);
+    completedEvents.forEach(e => {
+      const time = new Date(e.date).getTime();
+      (e.assignedIds || []).forEach(id => {
+        if (virtualCounts[id] !== undefined && lastAssignedDates[id] < time) {
+          lastAssignedDates[id] = time;
+        }
+      });
+    });
 
     for (const ev of futureEvents) {
-      // その時点の仮想カウントが少ない順にソート
-      const available = [...activeM].sort((a, b) => virtualCounts[a.id] - virtualCounts[b.id]);
-      const selected = available.slice(0, ev.numSets);
-      
-      // 選ばれた人の仮想カウントを加算
-      selected.forEach(m => { virtualCounts[m.id] += 1; });
+      // その時点の仮想カウントと前回担当日を元にソート
+      const available = [...activeM].sort((a, b) => {
+        if (virtualCounts[a.id] !== virtualCounts[b.id]) {
+          return virtualCounts[a.id] - virtualCounts[b.id]; // 回数が少ない人を優先
+        }
+        if (lastAssignedDates[a.id] !== lastAssignedDates[b.id]) {
+          return lastAssignedDates[a.id] - lastAssignedDates[b.id]; // 最後に担当した日が古い人を優先
+        }
+        return a.id.localeCompare(b.id);
+      });
 
-      const currentIdsStr = ev.assignedIds.join(',');
+      const selected = available.slice(0, ev.numSets);
+      const evTime = new Date(ev.date).getTime();
+      
+      // 選ばれた人の仮想カウントと最終担当日を更新
+      selected.forEach(m => { 
+        virtualCounts[m.id] += 1; 
+        lastAssignedDates[m.id] = evTime;
+      });
+
+      const currentIdsStr = (ev.assignedIds || []).join(',');
       const newIdsStr = selected.map(m => m.id).join(',');
 
-      // 担当者が変わる場合のみ更新
+      // 担当者が変わる場合のみDBを更新
       if (currentIdsStr !== newIdsStr) {
         await updateDoc(getDocRef('events', ev.id), {
           assignedIds: selected.map(m => m.id),
@@ -198,9 +229,9 @@ export default function App() {
     const docRef = await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
     e.target.reset();
 
-    // 新規入会者を含めて未来の予定を再計算
+    // 新規入会者を含めて全体を再計算
     const newMember = { id: docRef.id, name, count: initialCount, active: true };
-    await autoReassignFutureEvents([...members, newMember], events);
+    await rebalanceFutureEvents([...members, newMember], events);
   };
 
   const handleUpdateMember = async (e) => {
@@ -214,11 +245,30 @@ export default function App() {
       name: newName, 
       count: newCount 
     });
+
+    // 既に作成されている予定（履歴や今後の予定）の担当者名も一括で書き換える
+    const eventsToUpdate = events.filter(ev => ev.assignedIds && ev.assignedIds.includes(editingMemberId));
+    const updatedEvents = [...events];
+    
+    for (const ev of eventsToUpdate) {
+      const newAssignedNames = ev.assignedNames.map((n, idx) => 
+        ev.assignedIds[idx] === editingMemberId ? newName : n
+      );
+      await updateDoc(getDocRef('events', ev.id), {
+        assignedNames: newAssignedNames
+      });
+      
+      const evIndex = updatedEvents.findIndex(e => e.id === ev.id);
+      if (evIndex !== -1) {
+        updatedEvents[evIndex] = { ...ev, assignedNames: newAssignedNames };
+      }
+    }
+
     setEditingMemberId(null);
 
     // 名前や回数が変わったので再計算
     const updatedMembers = members.map(m => m.id === editingMemberId ? { ...m, name: newName, count: newCount } : m);
-    await autoReassignFutureEvents(updatedMembers, events);
+    await rebalanceFutureEvents(updatedMembers, updatedEvents);
   };
 
   const handleToggleMember = async (m) => {
@@ -227,7 +277,7 @@ export default function App() {
     
     // 休止/復帰によって名簿状態が変わるので再計算
     const updatedMembers = members.map(member => member.id === m.id ? { ...member, active: !m.active } : member);
-    await autoReassignFutureEvents(updatedMembers, events);
+    await rebalanceFutureEvents(updatedMembers, events);
   };
 
   const handleDeleteMember = async (m) => {
@@ -237,7 +287,7 @@ export default function App() {
       
       // 退会した人を除外して再計算
       const updatedMembers = members.filter(member => member.id !== m.id);
-      await autoReassignFutureEvents(updatedMembers, events);
+      await rebalanceFutureEvents(updatedMembers, events);
     }
   };
 
@@ -247,18 +297,23 @@ export default function App() {
     const date = e.target.date.value;
     const sets = parseInt(e.target.sets.value);
     const activeM = members.filter(m => m.active);
+    
     if (activeM.length < sets) {
       setModal({ open: true, title: '人数不足', content: '担当可能なメンバーが足りません。' });
       return;
     }
-    const futureAssignments = events.filter(ev => !ev.completed).flatMap(ev => ev.assignedIds);
-    const sorted = [...activeM].sort((a, b) => {
-      const scoreA = (a.count || 0) + futureAssignments.filter(id => id === a.id).length;
-      const scoreB = (b.count || 0) + futureAssignments.filter(id => id === b.id).length;
-      return scoreA - scoreB;
+
+    // まずは空の枠として予定を追加する
+    const docRef = await addDoc(getColRef('events'), { 
+      date, numSets: sets, 
+      assignedIds: [], assignedNames: [], 
+      completed: false, createdAt: new Date().toISOString() 
     });
-    const selected = sorted.slice(0, sets);
-    await addDoc(getColRef('events'), { date, numSets: sets, assignedIds: selected.map(m => m.id), assignedNames: selected.map(m => m.name), completed: false, createdAt: new Date().toISOString() });
+
+    // 新しい予定を含めて、全体を通して公平に再割り当てを実行
+    const newEvent = { id: docRef.id, date, numSets: sets, assignedIds: [], assignedNames: [], completed: false };
+    await rebalanceFutureEvents(members, [...events, newEvent]);
+
     setIsScheduleFormOpen(false);
   };
 
@@ -270,21 +325,22 @@ export default function App() {
     const sets = parseInt(e.target.bulkSets.value);
     const activeM = members.filter(m => m.active);
     
-    // 既存の予定の日付リストを取得
+    if (activeM.length < sets) {
+      setModal({ open: true, title: '人数不足', content: '担当可能なメンバーが足りません。' });
+      return;
+    }
+
     const existingDates = events.map(ev => ev.date);
-    
     const dates = [];
     let curr = new Date(start);
     
     while (curr <= end) {
       if (bulkDays.includes(curr.getDay())) {
-        // タイムゾーンのズレを防ぐため、ローカル時間で日付文字列を作成
         const y = curr.getFullYear();
         const m = String(curr.getMonth() + 1).padStart(2, '0');
         const d = String(curr.getDate()).padStart(2, '0');
         const dateStr = `${y}-${m}-${d}`;
         
-        // すでに予定が存在する日付はスキップする
         if (!existingDates.includes(dateStr)) {
           dates.push(dateStr);
         }
@@ -300,17 +356,19 @@ export default function App() {
     setModal({
       open: true, title: '一括作成', content: `新しく ${dates.length} 件の予定を作成しますか？\n（すでに予定がある日付はスキップされます）`,
       onConfirm: async () => {
-        let futureAssignments = events.filter(ev => !ev.completed).flatMap(ev => ev.assignedIds);
+        const newEvents = [];
         for (const d of dates) {
-          const sorted = [...activeM].sort((a, b) => {
-            const scoreA = (a.count || 0) + futureAssignments.filter(id => id === a.id).length;
-            const scoreB = (b.count || 0) + futureAssignments.filter(id => id === b.id).length;
-            return scoreA - scoreB;
+          const docRef = await addDoc(getColRef('events'), { 
+            date: d, numSets: sets, 
+            assignedIds: [], assignedNames: [], 
+            completed: false, createdAt: new Date().toISOString() 
           });
-          const sel = sorted.slice(0, sets);
-          await addDoc(getColRef('events'), { date: d, numSets: sets, assignedIds: sel.map(m => m.id), assignedNames: sel.map(m => m.name), completed: false, createdAt: new Date().toISOString() });
-          futureAssignments.push(...sel.map(m => m.id));
+          newEvents.push({ id: docRef.id, date: d, numSets: sets, assignedIds: [], assignedNames: [], completed: false });
         }
+        
+        // 全体をリバランス
+        await rebalanceFutureEvents(members, [...events, ...newEvents]);
+        
         setIsScheduleFormOpen(false); closeModal();
       }
     });
@@ -324,11 +382,15 @@ export default function App() {
     setModal({
       open: true,
       title: '一括削除の確認',
-      content: `選択した ${selectedEventIds.length} 件の予定を完全に削除しますか？`,
+      content: `選択した ${selectedEventIds.length} 件の予定を完全に削除しますか？\n（削除後、残りの予定は公平に再割り当てされます）`,
       onConfirm: async () => {
         for (const id of selectedEventIds) {
           await deleteDoc(getDocRef('events', id));
         }
+        
+        const remainingEvents = events.filter(e => !selectedEventIds.includes(e.id));
+        await rebalanceFutureEvents(members, remainingEvents);
+        
         setSelectedEventIds([]);
         closeModal();
       }
@@ -618,7 +680,17 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex gap-1 shrink-0 ml-2">
-                      <button onClick={async () => { setModal({ open: true, title: "予定の削除", content: "消去しますか？", onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } }); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
+                      <button onClick={async () => { 
+                        setModal({ 
+                          open: true, title: "予定の削除", content: "消去しますか？\n（削除後、残りの予定は自動で公平に割り当て直されます）", 
+                          onConfirm: async () => { 
+                            await deleteDoc(getDocRef('events', e.id)); 
+                            const remainingEvents = events.filter(ev => ev.id !== e.id);
+                            await rebalanceFutureEvents(members, remainingEvents);
+                            setModal({...modal, open: false}); 
+                          } 
+                        }); 
+                      }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                     </div>
                   </div>
                 ))}
@@ -634,7 +706,7 @@ export default function App() {
                   <form onSubmit={handleProcessEvent} className="space-y-6">
                     <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block font-black tracking-widest">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-black outline-none border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500" defaultValue={new Date().toISOString().split('T')[0]} /></div>
                     <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block font-black tracking-widest">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-black outline-none border-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                    <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] shadow-xl active:scale-95 transition-all mt-4 font-black uppercase tracking-widest">割り当てて保存</button>
+                    <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] shadow-xl active:scale-95 transition-all mt-4 font-black uppercase tracking-widest">全体を公平に自動割り当て</button>
                   </form>
                 ) : (
                   <form onSubmit={handleBulkProcessEvent} className="space-y-6">
@@ -651,7 +723,7 @@ export default function App() {
                       </div>
                     </div>
                     <div><label className="text-[10px] font-black text-slate-400 mb-2 block font-black font-black">1日あたりの人数</label><select name="bulkSets" className="w-full p-4 rounded-2xl bg-slate-50 font-black border-none ring-1 ring-slate-200"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                    <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] shadow-xl mt-4 font-black uppercase tracking-widest">一括作成を実行</button>
+                    <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.5rem] shadow-xl mt-4 font-black uppercase tracking-widest">全体を公平に一括作成</button>
                   </form>
                 )}
               </div>
