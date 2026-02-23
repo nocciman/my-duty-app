@@ -13,12 +13,11 @@ const IconPlus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="non
 const IconClose = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconChevronRight = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
 const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
-const IconSlide = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>;
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 
-// --- Firebase Configuration (本番固定) ---
+// --- Firebase 設定 ---
 const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined') {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
     try { return JSON.parse(__firebase_config); } catch (e) { console.error(e); }
   }
   return {
@@ -31,10 +30,11 @@ const getFirebaseConfig = () => {
   };
 };
 
-const app = getApps().length === 0 ? initializeApp(getFirebaseConfig()) : getApps()[0];
+const firebaseConfig = getFirebaseConfig();
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(app);
 const db = getFirestore(app);
-// スラッシュを置換して安全なIDを生成
+// プレビュー環境のIDを優先し、スラッシュはアンダースコアに置換（パスエラー防止）
 const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-v2-production';
 
 export default function App() {
@@ -46,22 +46,14 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [loading, setLoading] = useState(true);
   
-  // 接続状況デバッグ用
-  const [authStatus, setAuthStatus] = useState("準備中...");
-  const [dbStatus, setDbStatus] = useState("待機中...");
   const [errorMsg, setErrorMsg] = useState(null);
 
   const [settings, setSettings] = useState({ appName: "当番管理", taskName: "用具" });
   const [modal, setModal] = useState({ open: false, title: '', content: '', onConfirm: null });
-  const [slideModal, setSlideModal] = useState({ open: false, event: null, index: -1, absentName: '', candidates: [] });
-  
-  const [editingEvent, setEditingEvent] = useState(null);
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editMemberName, setEditMemberName] = useState("");
   const [editMemberCount, setEditMemberCount] = useState(0);
-
   const [isScheduleFormOpen, setIsScheduleFormOpen] = useState(false);
-  const [historyLimit, setHistoryLimit] = useState(5);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "";
@@ -72,10 +64,9 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. 認証
+  // 1. Firebase 認証フロー (Mandatory Rule 3 準拠)
   useEffect(() => {
-    const init = async () => {
-      setAuthStatus("ログイン試行中...");
+    const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
@@ -84,71 +75,58 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証エラー: FirebaseのAuthenticationで「匿名ログイン」が有効か確認してください。 (Code: " + error.code + ")");
+        setErrorMsg("認証エラー: FirebaseのAuthenticationで「匿名」を有効にしてください。");
       }
     };
-    init();
+    initAuth();
 
-    const handleHashChange = () => {
-      const hash = window.location.hash.replace('#', '');
-      setGroupId(hash || null);
-    };
+    const handleHashChange = () => setGroupId(window.location.hash.replace('#', '') || null);
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) setAuthStatus("ログイン成功！");
-    });
+    const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => {
-      unsub();
+      unsubscribe();
       window.removeEventListener('hashchange', handleHashChange);
     };
   }, []);
 
-  // 2. グループ一覧の取得
+  // 2. グループ一覧取得 (Auth完了後に実行)
   useEffect(() => {
     if (!user) return;
-    setDbStatus("グループ一覧を取得中...");
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
     const unsub = onSnapshot(groupsRef, (snap) => {
       setGroupList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
-      setDbStatus("データ同期中");
       if (!groupId) setLoading(false);
     }, (err) => {
       console.error("Firestore groups error:", err);
-      setErrorMsg("データベース接続エラー: FirebaseのFirestoreの「ルール」が正しく公開(Publish)されているか確認してください。 (Error: " + err.code + ")");
+      if (err.code === 'permission-denied') {
+        setErrorMsg("権限エラー: FirebaseコンソールのFirestore『ルール』タブで青い「公開(Publish)」ボタンを押したか確認してください。");
+      } else {
+        setErrorMsg("データ取得エラー: " + err.message);
+      }
       setLoading(false);
     });
     return () => unsub();
   }, [user, groupId]);
 
-  // 3. 個別グループのデータ取得
+  // 3. 個別グループデータ取得 (groupId決定後に実行)
   useEffect(() => {
     if (!user || !groupId) return;
     setLoading(true);
 
-    const membersColName = groupId === 'default' ? 'members' : `${groupId}_members`;
-    const eventsColName = groupId === 'default' ? 'events' : `${groupId}_events`;
-    const configPathArgs = groupId === 'default' 
-      ? ['artifacts', appId, 'public', 'data', 'config', 'settings']
-      : ['artifacts', appId, 'public', 'data', 'config', groupId];
+    const membersCol = collection(db, 'artifacts', appId, 'public', 'data', `${groupId}_members`);
+    const eventsCol = collection(db, 'artifacts', appId, 'public', 'data', `${groupId}_events`);
+    const configDoc = doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId);
 
-    const mRef = collection(db, 'artifacts', appId, 'public', 'data', membersColName);
-    const eRef = collection(db, 'artifacts', appId, 'public', 'data', eventsColName);
-    const sRef = doc(db, ...configPathArgs);
-
-    const unsubM = onSnapshot(mRef, (s) => {
+    const unsubM = onSnapshot(membersCol, (s) => {
       setMembers(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.count || 0) - (b.count || 0)));
       setLoading(false);
-    }, (err) => {
-      console.error("Firestore members error:", err);
-      setLoading(false);
-    });
-    const unsubE = onSnapshot(eRef, (s) => {
+    }, (err) => setLoading(false));
+    const unsubE = onSnapshot(eventsCol, (s) => {
       setEvents(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date) - new Date(a.date)));
-    }, (err) => console.error("Firestore events error:", err));
-    const unsubS = onSnapshot(sRef, (d) => { 
+    });
+    const unsubS = onSnapshot(configDoc, (d) => { 
       if (d.exists()) setSettings(d.data());
       else setSettings({ appName: "当番管理", taskName: "用具" });
     });
@@ -156,14 +134,14 @@ export default function App() {
     return () => { unsubM(); unsubE(); unsubS(); };
   }, [user, groupId]);
 
-  const getDocRef = (baseName, id) => doc(db, 'artifacts', appId, 'public', 'data', groupId === 'default' ? baseName : `${groupId}_${baseName}`, id);
-  const getColRef = (baseName) => collection(db, 'artifacts', appId, 'public', 'data', groupId === 'default' ? baseName : `${groupId}_${baseName}`);
+  const getDocRef = (baseName, id) => doc(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`, id);
+  const getColRef = (baseName) => collection(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`);
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
     const groupName = e.target.groupName.value.trim();
-    if (!groupName) return;
-    const newGroupId = 'group_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    if (!groupName || !user) return;
+    const newGroupId = 'group_' + Date.now().toString(36);
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', newGroupId), { name: groupName, createdAt: new Date().toISOString() });
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', newGroupId), { appName: groupName, taskName: "用具" });
     e.target.reset();
@@ -173,12 +151,10 @@ export default function App() {
   const handleAddMember = async (e) => {
     e.preventDefault();
     const name = e.target.memberName.value.trim();
-    if (!name) return;
+    if (!name || !user) return;
     let initialCount = 0;
-    const activeMembers = members.filter(m => m.active);
-    if (activeMembers.length > 0) {
-      const totalCount = activeMembers.reduce((sum, m) => sum + (m.count || 0), 0);
-      initialCount = Math.floor(totalCount / activeMembers.length);
+    if (members.length > 0) {
+      initialCount = Math.floor(members.reduce((sum, m) => sum + (m.count || 0), 0) / members.length);
     }
     await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
     e.target.reset();
@@ -195,21 +171,15 @@ export default function App() {
     }
     const sortedMembers = [...activeM].sort((a, b) => (a.count || 0) - (b.count || 0));
     const selected = sortedMembers.slice(0, sets);
-    const data = { date, numSets: sets, assignedIds: selected.map(m => m.id), assignedNames: selected.map(m => m.name) };
     try {
-      if (editingEvent) {
-        await updateDoc(getDocRef('events', editingEvent.id), data);
-        setEditingEvent(null);
-      } else {
-        await addDoc(getColRef('events'), { ...data, completed: false, createdAt: new Date().toISOString() });
-      }
+      await addDoc(getColRef('events'), { date, numSets: sets, assignedIds: selected.map(m => m.id), assignedNames: selected.map(m => m.name), completed: false, createdAt: new Date().toISOString() });
       setIsScheduleFormOpen(false);
     } catch (err) { setModal({ open: true, title: 'エラー', content: '保存に失敗しました。', onConfirm: null }); }
   };
 
   const completeEvent = async (event) => {
     setModal({
-      open: true, title: '完了の確認', content: '担当が完了しましたか？',
+      open: true, title: '完了の確認', content: '当番を完了として記録し、回数を加算しますか？',
       onConfirm: async () => {
         for (const mid of event.assignedIds) {
           const mRef = getDocRef('members', mid);
@@ -217,19 +187,21 @@ export default function App() {
           if (mSnap.exists()) await updateDoc(mRef, { count: (mSnap.data().count || 0) + 1 });
         }
         await updateDoc(getDocRef('events', event.id), { completed: true });
-        setModal({ open: false, title: '', content: '', onConfirm: null });
+        setModal({ ...modal, open: false });
       }
     });
   };
 
-  // --- 画面表示 ---
-
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
-      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100">
-        <h2 className="text-red-600 font-black text-xl mb-4">⚠️ 接続エラー</h2>
+      <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center">
+        <h2 className="text-red-600 font-black text-xl mb-4">⚠️ 権限エラー</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{errorMsg}</p>
-        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みする</button>
+        <div className="bg-slate-50 p-4 rounded-xl text-xs text-left mb-6 font-mono text-slate-500">
+          Firestore ＞ ルール タブで<br/>
+          「公開(Publish)」を押しましたか？
+        </div>
+        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みして確認</button>
       </div>
     </div>
   );
@@ -237,21 +209,8 @@ export default function App() {
   if (loading) return (
     <div className="flex flex-col h-screen items-center justify-center bg-slate-50 font-sans p-10 text-center">
       <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-      <div className="font-black text-slate-400 text-lg mb-8 uppercase tracking-widest">読み込み中...</div>
-      
-      <div className="w-full max-w-xs space-y-3 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-        <div className="flex justify-between text-xs font-bold border-b pb-2">
-          <span className="text-slate-400 uppercase">認証</span>
-          <span className={authStatus.includes("成功") ? "text-emerald-500" : "text-amber-500"}>{authStatus}</span>
-        </div>
-        <div className="flex justify-between text-xs font-bold pt-1">
-          <span className="text-slate-400 uppercase">データ</span>
-          <span className={dbStatus.includes("同期") ? "text-emerald-500" : "text-amber-500"}>{dbStatus}</span>
-        </div>
-      </div>
-      <p className="text-[10px] text-slate-300 mt-10 font-bold leading-relaxed">
-        1分以上進まない場合は、Firebaseの「ルール」設定が<br/>公開(Publish)されているか、Firestoreが作成済みか確認してください。
-      </p>
+      <div className="font-black text-slate-400 text-lg mb-2 uppercase tracking-widest">Connecting...</div>
+      <div className="text-xs text-slate-300 font-bold italic">Checking Permissions</div>
     </div>
   );
 
@@ -267,9 +226,7 @@ export default function App() {
             <div>
               <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">部屋に入る</h3>
               <div className="space-y-3">
-                <button onClick={() => window.location.hash = 'default'} className="w-full p-5 bg-slate-50 rounded-2xl text-left flex justify-between items-center font-bold group border-2 border-transparent hover:border-indigo-100 transition-all">
-                  <span className="text-slate-600">以前のデータ (共通グループ)</span><IconChevronRight />
-                </button>
+                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-4">作成済みの部屋はありません</p>}
                 {groupList.map(g => (
                   <button key={g.id} onClick={() => window.location.hash = g.id} className="w-full p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm group hover:border-indigo-500 transition-all">
                     <span className="text-indigo-900">{g.name}</span><IconChevronRight />
@@ -281,7 +238,7 @@ export default function App() {
               <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">新しい部屋を作る</h3>
               <form onSubmit={handleCreateGroup} className="flex gap-2">
                 <input name="groupName" placeholder="団体名を入力" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500" required />
-                <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all">作成</button>
+                <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg">作成</button>
               </form>
             </div>
           </div>
@@ -330,31 +287,17 @@ export default function App() {
                       <div className="text-3xl font-black text-slate-800">{formatDate(next.date)}</div>
                       <div className="flex flex-wrap justify-center gap-2 mt-4">
                         {next.assignedNames.map((name, i) => (
-                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg shadow-indigo-100">
+                          <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg">
                             <span className="text-2xl font-bold">{name} さん</span>
                           </div>
                         ))}
                       </div>
-                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl shadow-emerald-100 active:scale-95 transition-all mt-6">完了</button>
+                      <button onClick={() => completeEvent(next)} className="w-full bg-emerald-500 text-white font-black text-3xl py-6 rounded-[2rem] shadow-xl active:scale-95 transition-all mt-6">完了</button>
                     </div>
                   );
                 })()
-              ) : <p className="py-12 text-slate-400 font-bold italic">予定なし</p>}
+              ) : <p className="py-12 text-slate-400 font-bold italic text-center">予定なし</p>}
             </div>
-            
-            <section className="space-y-4">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">最近の履歴</h3>
-              <div className="space-y-3">
-                {events.filter(e => e.completed).slice(0, 5).map(e => (
-                  <div key={e.id} className="bg-white p-5 rounded-3xl border border-slate-100 flex justify-between items-center shadow-sm">
-                    <div>
-                      <div className="text-[10px] text-slate-400 font-bold mb-1">{formatDate(e.date)}</div>
-                      <div className="font-bold text-slate-700 text-lg">{e.assignedNames.join(', ')} さん</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
           </div>
         )}
 
@@ -362,28 +305,25 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
             {!isScheduleFormOpen ? (
               <div className="space-y-4">
-                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 active:scale-95 transition-all"><IconPlus /> 予定を追加</button>
+                <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"><IconPlus /> 予定を追加</button>
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
                   <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
                     <div>
                       <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
                       <div className="text-xs font-bold text-indigo-500 uppercase mt-1">担当: {e.assignedNames.join(', ')}</div>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => { setEditingEvent(e); setIsScheduleFormOpen(true); }} className="p-3 text-slate-300 hover:text-indigo-600"><IconEdit /></button>
-                      <button onClick={async () => { setModal({ open: true, title: '削除', content: '予定を消去します。', onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } }); }} className="p-3 text-slate-300 hover:text-red-500"><IconTrash /></button>
-                    </div>
+                    <button onClick={async () => { if(confirm('削除しますか？')) await deleteDoc(getDocRef('events', e.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 ))}
               </div>
             ) : (
               <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 animate-in zoom-in-95 shadow-lg relative">
-                <button onClick={() => { setIsScheduleFormOpen(false); setEditingEvent(null); }} className="absolute top-6 right-6 p-2 text-slate-400 bg-slate-50 rounded-full transition-colors"><IconClose /></button>
-                <h3 className="font-black text-2xl mb-8">{editingEvent ? '予定の修正' : '新規予定の登録'}</h3>
+                <button onClick={() => setIsScheduleFormOpen(false)} className="absolute top-6 right-6 p-2 text-slate-400 bg-slate-50 rounded-full transition-colors"><IconClose /></button>
+                <h3 className="font-black text-2xl mb-8">新規予定の登録</h3>
                 <form onSubmit={handleProcessEvent} className="space-y-6">
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={editingEvent ? editingEvent.date : new Date().toISOString().split('T')[0]} /></div>
-                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={editingEvent ? editingEvent.numSets : 1}><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 active:scale-95 transition-all">{editingEvent ? '保存して自動更新' : '登録して自動決定'}</button>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500" defaultValue={new Date().toISOString().split('T')[0]} /></div>
+                  <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">登録して自動決定</button>
                 </form>
               </div>
             )}
@@ -407,9 +347,8 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => { setEditingMemberId(m.id); setEditMemberName(m.name); setEditMemberCount(m.count || 0); }} className="p-3 text-slate-300 hover:text-indigo-600"><IconEdit /></button>
                     <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
-                    <button onClick={() => handleDeleteMember(m)} className="p-3 text-slate-300 hover:text-red-500"><IconTrash /></button>
+                    <button onClick={async () => { if(confirm(`${m.name}さんを削除？`)) await deleteDoc(getDocRef('members', m.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
                 </div>
               ))}
@@ -419,23 +358,14 @@ export default function App() {
 
         {activeTab === 'settings' && (
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
-            <h3 className="font-black text-2xl tracking-tight text-slate-800">設定</h3>
+            <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">設定</h3>
             <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest">部屋の名前 (学年など)</label>
-                <input type="text" value={settings.appName} onChange={async (e) => { 
-                  const newName = e.target.value;
-                  const s = { ...settings, appName: newName }; 
-                  setSettings(s); 
-                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId === 'default' ? 'settings' : groupId), s); 
-                  if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
-                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
-              </div>
-              <div className="pt-6 border-t border-slate-100">
-                <button onClick={() => { window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors">
-                  <IconLogOut /> 部屋を選び直す
-                </button>
-              </div>
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前</label><input type="text" value={settings.appName} onChange={async (e) => { 
+                const newName = e.target.value; const s = { ...settings, appName: newName }; setSettings(s); 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+              }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" /></div>
+              <div className="pt-6 border-t border-slate-100"><button onClick={() => { window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors"><IconLogOut /> 部屋を選び直す</button></div>
             </div>
             <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-bold py-5 rounded-2xl shadow-xl active:scale-95 transition-all">完了</button>
           </div>
