@@ -426,7 +426,7 @@ export default function App() {
       if (!candidates.find(c => c.memberId === m.id)) candidates.push({ type: 'replace', memberId: m.id, memberName: m.name, count: m.count || 0 });
     });
     
-    setSlideModal({ open: true, event, index, absentName, candidates: candidates.slice(0, 3) });
+    setSlideModal({ open: true, event, index, absentName, candidates: candidates.slice(0, 5) });
   };
 
   const executeSlide = async (candidate) => {
@@ -755,7 +755,7 @@ export default function App() {
               {members.map(m => (
                 <div key={m.id} className={`p-5 rounded-[2.5rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm border-slate-100' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   {editingMemberId === m.id ? (
-                    <form onSubmit={handleEditMember} className="flex gap-2 items-center w-full animate-in fade-in duration-300">
+                    <form onSubmit={handleUpdateMember} className="flex gap-2 items-center w-full animate-in fade-in duration-300">
                       <input type="text" value={editMemberName} onChange={e => setEditMemberName(e.target.value)} className="flex-1 p-3 rounded-xl border border-indigo-200 font-black outline-none font-black" autoFocus />
                       <input type="number" value={editMemberCount} onChange={e => setEditMemberCount(e.target.value)} className="w-20 p-3 rounded-xl border border-indigo-200 font-black text-center font-black" />
                       <button type="submit" className="bg-indigo-600 text-white p-3 rounded-xl"><IconPlus /></button>
