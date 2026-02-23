@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- アイコンコンポーネント (SVG) ---
@@ -15,8 +15,9 @@ const IconChevronRight = () => <svg width="20" height="20" viewBox="0 0 24 24" f
 const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 const IconSlide = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></svg>;
+const IconUndo = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>;
 
-// --- Firebase Configuration (環境依存をなくし、常に本番用を参照) ---
+// --- Firebase Configuration ---
 const firebaseConfig = {
   apiKey: "AIzaSyDEw9TJCXWJlAoDgc1X1XCMl0LMKxrzLgg",
   authDomain: "duty-manager-33163.firebaseapp.com",
@@ -30,7 +31,7 @@ const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : get
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// パス構造を完全に固定（環境によるエラーを排除）
+// パス構造を完全に固定
 const appId = 'duty-manager-v6-production';
 
 // 管理者パスワード
@@ -62,6 +63,8 @@ export default function App() {
   const [bulkStart, setBulkStart] = useState(new Date().toISOString().split('T')[0]);
   const [bulkEnd, setBulkEnd] = useState('');
   const [bulkDays, setBulkDays] = useState([0, 6]);
+  
+  const [selectedEventIds, setSelectedEventIds] = useState([]); // 一括削除用
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "";
@@ -72,14 +75,14 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. Firebase Auth Initializer (常に匿名認証を使用)
+  // 1. Firebase Auth Initializer
   useEffect(() => {
     const initAuth = async () => {
       try {
         await signInAnonymously(auth);
       } catch (error) { 
         console.error("Auth error:", error); 
-        setErrorMsg(`【重要】認証に失敗しました。\nFirebaseコンソールの「Authentication」＞「Sign-in method」タブで、「匿名（Anonymous）」ログインを有効にしてください。\n\n(Error: ${error.code})`);
+        setErrorMsg(`認証エラーが発生しました。\n(Error: ${error.code})`);
       }
     };
     initAuth();
@@ -97,6 +100,10 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    setSelectedEventIds([]);
+  }, [activeTab]);
+
   // 2. 団体一覧の取得
   useEffect(() => {
     if (!user || groupId) return;
@@ -107,9 +114,6 @@ export default function App() {
       setLoading(false);
     }, (err) => {
       console.error("Groups snapshot error:", err);
-      if (err.code === 'permission-denied') {
-        setErrorMsg("【重要】データへのアクセス権限がありません。\nFirebaseコンソールの「Firestore Database」＞「ルール」を以下の内容に書き換えて「公開」してください。\n\nmatch /{document=**} {\n  allow read, write: if true;\n}");
-      }
       setLoading(false);
     });
     return () => unsub();
@@ -130,9 +134,6 @@ export default function App() {
     const unsubM = onSnapshot(mCol, (s) => {
       setMembers(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.count || 0) - (b.count || 0)));
       setLoading(false);
-    }, (err) => {
-      if (err.code === 'permission-denied') setErrorMsg("権限エラー。Firestoreのルールを公開にしてください。");
-      setLoading(false);
     });
     
     const unsubE = onSnapshot(eCol, (s) => {
@@ -149,6 +150,40 @@ export default function App() {
   const getDocRef = (baseName, id) => doc(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`, id);
   const getColRef = (baseName) => collection(db, 'artifacts', appId, 'public', 'data', `${groupId}_${baseName}`);
 
+  // --- 自動再計算ロジック ---
+  // 名簿に変更があった際、未完了の予定を公平な状態に再割り当てする
+  const autoReassignFutureEvents = async (currentMembersList, currentEventsList) => {
+    const futureEvents = currentEventsList.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (futureEvents.length === 0) return;
+
+    const activeM = currentMembersList.filter(m => m.active);
+    if (activeM.length === 0) return;
+
+    // 現在の回数をベースにした「仮想カウント」
+    const virtualCounts = {};
+    activeM.forEach(m => { virtualCounts[m.id] = m.count || 0; });
+
+    for (const ev of futureEvents) {
+      // その時点の仮想カウントが少ない順にソート
+      const available = [...activeM].sort((a, b) => virtualCounts[a.id] - virtualCounts[b.id]);
+      const selected = available.slice(0, ev.numSets);
+      
+      // 選ばれた人の仮想カウントを加算
+      selected.forEach(m => { virtualCounts[m.id] += 1; });
+
+      const currentIdsStr = ev.assignedIds.join(',');
+      const newIdsStr = selected.map(m => m.id).join(',');
+
+      // 担当者が変わる場合のみ更新
+      if (currentIdsStr !== newIdsStr) {
+        await updateDoc(getDocRef('events', ev.id), {
+          assignedIds: selected.map(m => m.id),
+          assignedNames: selected.map(m => m.name)
+        });
+      }
+    }
+  };
+
   // --- ハンドラー ---
 
   const handleAddMember = async (e) => {
@@ -156,31 +191,53 @@ export default function App() {
     if (!user) return;
     const name = e.target.memberName.value.trim();
     if (!name) return;
+    
     let initialCount = 0;
     if (members.length > 0) initialCount = Math.floor(members.reduce((sum, m) => sum + (m.count || 0), 0) / members.length);
-    await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
+    
+    const docRef = await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
     e.target.reset();
+
+    // 新規入会者を含めて未来の予定を再計算
+    const newMember = { id: docRef.id, name, count: initialCount, active: true };
+    await autoReassignFutureEvents([...members, newMember], events);
   };
 
   const handleUpdateMember = async (e) => {
     e.preventDefault();
     if (!user || !editingMemberId) return;
+    
+    const newName = editMemberName.trim();
+    const newCount = parseInt(editMemberCount) || 0;
+
     await updateDoc(getDocRef('members', editingMemberId), { 
-      name: editMemberName, 
-      count: parseInt(editMemberCount) || 0 
+      name: newName, 
+      count: newCount 
     });
     setEditingMemberId(null);
+
+    // 名前や回数が変わったので再計算
+    const updatedMembers = members.map(m => m.id === editingMemberId ? { ...m, name: newName, count: newCount } : m);
+    await autoReassignFutureEvents(updatedMembers, events);
   };
 
   const handleToggleMember = async (m) => {
     if (!user) return;
     await updateDoc(getDocRef('members', m.id), { active: !m.active });
+    
+    // 休止/復帰によって名簿状態が変わるので再計算
+    const updatedMembers = members.map(member => member.id === m.id ? { ...member, active: !m.active } : member);
+    await autoReassignFutureEvents(updatedMembers, events);
   };
 
   const handleDeleteMember = async (m) => {
     if (!user) return;
-    if (confirm(`${m.name}さんを削除しますか？`)) {
+    if (confirm(`${m.name}さんを名簿から削除（退会）しますか？\n※未完了の予定からは自動的に外れ、他の人が割り当てられます。過去の履歴には名前が残ります。`)) {
       await deleteDoc(getDocRef('members', m.id));
+      
+      // 退会した人を除外して再計算
+      const updatedMembers = members.filter(member => member.id !== m.id);
+      await autoReassignFutureEvents(updatedMembers, events);
     }
   };
 
@@ -212,16 +269,36 @@ export default function App() {
     const end = new Date(bulkEnd);
     const sets = parseInt(e.target.bulkSets.value);
     const activeM = members.filter(m => m.active);
+    
+    // 既存の予定の日付リストを取得
+    const existingDates = events.map(ev => ev.date);
+    
     const dates = [];
     let curr = new Date(start);
+    
     while (curr <= end) {
-      if (bulkDays.includes(curr.getDay())) dates.push(curr.toISOString().split('T')[0]);
+      if (bulkDays.includes(curr.getDay())) {
+        // タイムゾーンのズレを防ぐため、ローカル時間で日付文字列を作成
+        const y = curr.getFullYear();
+        const m = String(curr.getMonth() + 1).padStart(2, '0');
+        const d = String(curr.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${d}`;
+        
+        // すでに予定が存在する日付はスキップする
+        if (!existingDates.includes(dateStr)) {
+          dates.push(dateStr);
+        }
+      }
       curr.setDate(curr.getDate() + 1);
     }
-    if (dates.length === 0) return;
+    
+    if (dates.length === 0) {
+      setModal({ open: true, title: '対象の日付がありません', content: '指定した期間に該当する日付がないか、すでに予定が作成されています。', onConfirm: null });
+      return;
+    }
 
     setModal({
-      open: true, title: '一括作成', content: `${dates.length}件の予定を一括作成しますか？`,
+      open: true, title: '一括作成', content: `新しく ${dates.length} 件の予定を作成しますか？\n（すでに予定がある日付はスキップされます）`,
       onConfirm: async () => {
         let futureAssignments = events.filter(ev => !ev.completed).flatMap(ev => ev.assignedIds);
         for (const d of dates) {
@@ -235,6 +312,25 @@ export default function App() {
           futureAssignments.push(...sel.map(m => m.id));
         }
         setIsScheduleFormOpen(false); closeModal();
+      }
+    });
+  };
+
+  const toggleEventSelection = (id) => {
+    setSelectedEventIds(prev => prev.includes(id) ? prev.filter(e => e !== id) : [...prev, id]);
+  };
+
+  const handleBulkDelete = () => {
+    setModal({
+      open: true,
+      title: '一括削除の確認',
+      content: `選択した ${selectedEventIds.length} 件の予定を完全に削除しますか？`,
+      onConfirm: async () => {
+        for (const id of selectedEventIds) {
+          await deleteDoc(getDocRef('events', id));
+        }
+        setSelectedEventIds([]);
+        closeModal();
       }
     });
   };
@@ -483,7 +579,7 @@ export default function App() {
                       <div className="text-[10px] font-bold text-slate-300 uppercase tracking-widest font-black">{formatDate(e.date)}</div>
                       <div className="font-black text-slate-600 text-xl leading-none mt-1">{e.assignedNames.join(', ')} <span className="text-sm font-normal">さん</span></div>
                     </div>
-                    <button onClick={() => undoComplete(e)} className="p-3 text-slate-200 hover:text-indigo-500 active:bg-slate-50 rounded-2xl transition" title="取消"><IconSlide /></button>
+                    <button onClick={() => undoComplete(e)} className="p-3 text-slate-400 hover:text-indigo-500 active:bg-slate-50 rounded-2xl transition" title="取消"><IconUndo /></button>
                   </div>
                 ))}
                 {events.filter(e => e.completed).length === 0 && <p className="text-center py-10 text-slate-200 text-xs font-black uppercase tracking-widest font-black">No History</p>}
@@ -497,13 +593,33 @@ export default function App() {
             {!isScheduleFormOpen ? (
               <div className="space-y-4">
                 <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[2rem] flex items-center justify-center gap-2 shadow-lg active:scale-95 transition shadow-indigo-100 font-black"><IconPlus /> 予定を追加</button>
+                
+                <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest ml-2 mt-6 font-black flex justify-between items-center">
+                  待機中の予定
+                  {selectedEventIds.length > 0 && (
+                    <button onClick={handleBulkDelete} className="bg-red-50 text-red-500 px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 active:scale-95 transition-all">
+                      <IconTrash /> {selectedEventIds.length}件を削除
+                    </button>
+                  )}
+                </h3>
+                
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
-                  <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
-                    <div className="max-w-[70%]">
-                      <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
-                      <div className="text-xs font-bold text-indigo-500 uppercase mt-1 truncate font-black tracking-widest">担当: {e.assignedNames.join(', ')}</div>
+                  <div key={e.id} className={`bg-white p-5 rounded-[2rem] border ${selectedEventIds.includes(e.id) ? 'border-indigo-300 ring-2 ring-indigo-50' : 'border-slate-100'} flex justify-between items-center shadow-sm transition-all`}>
+                    <div className="flex items-center gap-4 overflow-hidden">
+                      <input 
+                        type="checkbox" 
+                        className="w-5 h-5 accent-indigo-600 rounded-md shrink-0 border-slate-300"
+                        checked={selectedEventIds.includes(e.id)}
+                        onChange={() => toggleEventSelection(e.id)}
+                      />
+                      <div className="overflow-hidden">
+                        <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
+                        <div className="text-xs font-bold text-indigo-500 uppercase mt-1 truncate font-black tracking-widest">担当: {e.assignedNames.join(', ')}</div>
+                      </div>
                     </div>
-                    <button onClick={async () => { if(confirm('この予定を削除しますか？')) await deleteDoc(getDocRef('events', e.id)); }} className="p-4 text-slate-200 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    <div className="flex gap-1 shrink-0 ml-2">
+                      <button onClick={async () => { setModal({ open: true, title: "予定の削除", content: "消去しますか？", onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); } }); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
+                    </div>
                   </div>
                 ))}
               </div>
