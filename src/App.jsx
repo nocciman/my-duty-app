@@ -16,7 +16,7 @@ const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="n
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 const IconLock = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="10" x="5" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 
-// --- 管理者パスワードの設定 ---
+// --- 管理者パスワード ---
 const MASTER_ADMIN_PASSCODE = "2525"; 
 
 // --- Firebase Configuration ---
@@ -43,9 +43,9 @@ const firebaseApp = getApps().length === 0 ? initializeApp(getFirebaseConfig()) 
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// appIdからスラッシュを除去（Firebaseの階層数エラー防止）
+// appIdの無害化：スラッシュやドットをアンダースコアに置換し、Firebaseのパス制約をクリアする
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-final';
-const appId = String(rawAppId).replace(/\//g, '_');
+const appId = String(rawAppId).replace(/[^a-zA-Z0-9]/g, '_');
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -57,7 +57,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // 管理者認証状態
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState("");
 
@@ -74,7 +73,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. Firebase 認証とURL監視
+  // 1. 認証の初期化
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -85,9 +84,8 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        // 現在のドメインをエラーメッセージに表示
         const currentDomain = window.location.hostname;
-        setErrorMsg(`認証エラーが発生しました。\n\nFirebaseコンソールの Authentication ＞ 設定 ＞ 承認済みドメイン に、以下の文字列を【追加】してください：\n\n${currentDomain}\n\n(Code: ${error.code})`);
+        setErrorMsg(`認証エラーが発生しました。\n\nFirebaseコンソールの Authentication ＞ 設定 ＞ 承認済みドメイン に、以下の文字列を【追加】してください：\n\n${currentDomain}\n\n(Error: ${error.code})`);
       }
     };
     initAuth();
@@ -119,7 +117,7 @@ export default function App() {
     return () => unsub();
   }, [user, groupId, isAdminAuthenticated]);
 
-  // 3. 部屋別データの同期 (部屋IDがある場合 = 共有URL踏んだ人 または 管理者)
+  // 3. 部屋別データの同期
   useEffect(() => {
     if (!user || !groupId) {
       if (!groupId) setLoading(false); 
@@ -331,7 +329,7 @@ export default function App() {
     );
   }
 
-  // --- メインアプリ画面 (URL共有された人はここが表示される) ---
+  // --- メインアプリ画面 ---
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative overflow-x-hidden">
       {modal.open && (
@@ -413,7 +411,7 @@ export default function App() {
                 <form onSubmit={handleProcessEvent} className="space-y-6">
                   <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">実施日</label><input name="date" type="date" required className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" defaultValue={new Date().toISOString().split('T')[0]} /></div>
                   <div><label className="text-[10px] font-black text-slate-400 uppercase mb-2 block ml-1">担当人数</label><select name="sets" className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"><option value="1">1名担当</option><option value="2">2名担当</option></select></div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all shadow-indigo-50">登録して自動決定</button>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all shadow-indigo-100">登録して自動決定</button>
                 </form>
               </div>
             )}
@@ -424,14 +422,17 @@ export default function App() {
           <div className="space-y-6 animate-in slide-in-from-left-4 duration-500">
             <form onSubmit={handleAddMember} className="flex gap-2 p-2 bg-white rounded-3xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
               <input name="memberName" type="text" placeholder="名前を追加" className="flex-1 bg-transparent px-4 font-bold outline-none" />
-              <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl active:scale-95 shadow-md shadow-indigo-50"><IconPlus /></button>
+              <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl active:scale-95 shadow-md shadow-indigo-100"><IconPlus /></button>
             </form>
             <div className="space-y-3">
               {members.map(m => (
                 <div key={m.id} className={`p-4 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm border-slate-100' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{String(m.name).charAt(0)}</div>
-                    <div><div className="font-bold text-lg">{String(m.name)} <span className="text-sm font-normal opacity-60">さん</span></div><div className="text-xs text-indigo-500 font-bold uppercase tracking-widest font-black">回数: {m.count || 0}</div></div>
+                    <div>
+                      <div className="font-bold text-lg">{String(m.name)} さん</div>
+                      <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest font-black">回数: {m.count || 0}</div>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors font-black">{m.active ? '休止' : '復帰'}</button>
@@ -447,13 +448,34 @@ export default function App() {
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
             <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center font-black">設定</h3>
             <div className="space-y-6">
-              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
-              <input type="text" value={settings.appName} onChange={async (e) => { const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">部屋の名前</label>
+                <input type="text" value={settings.appName} onChange={async (e) => { 
+                  const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); 
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); 
+                  if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" />
+              </div>
               
-              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
-              <input type="text" value={settings.taskName} onChange={async (e) => { const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" /></div>
-
-              <div className="pt-6 border-t border-slate-100"><button onClick={() => { setAdminPassInput(""); setIsAdminAuthenticated(false); window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-black py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors uppercase text-[10px] tracking-widest font-black"><IconLogOut /> 部屋を選び直す (管理者パスが必要)</button></div>
+              <div>
+                <label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center font-black">当番の名称 (用具、ビブスなど)</label>
+                <input type="text" value={settings.taskName} onChange={async (e) => { 
+                  const newTask = String(e.target.value); setSettings(s => ({ ...s, taskName: newTask })); 
+                  await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, taskName: newTask }); 
+                }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center font-black" />
+              </div>
+              
+              <div className="pt-6 border-t border-slate-100">
+                <button onClick={() => { 
+                    setAdminPassInput(""); 
+                    setIsAdminAuthenticated(false);
+                    window.location.hash = ''; 
+                    setGroupId(null); 
+                    setActiveTab('home'); 
+                }} className="w-full bg-slate-100 text-slate-500 font-black py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors uppercase text-[10px] tracking-widest font-black">
+                  <IconLogOut /> 別の部屋を選ぶ (管理者パスが必要)
+                </button>
+              </div>
             </div>
             <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all shadow-slate-200">完了</button>
           </div>
