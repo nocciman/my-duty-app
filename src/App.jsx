@@ -15,27 +15,28 @@ const IconChevronRight = () => <svg width="20" height="20" viewBox="0 0 24 24" f
 const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 
-// --- Firebase 設定 ---
+// --- Firebase Configuration ---
 const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-    try { return JSON.parse(__firebase_config); } catch (e) { console.error(e); }
+  // プレビュー環境でのみシステム変数を優先
+  if (window.location.hostname.includes('usercontent.goog') && typeof __firebase_config !== 'undefined') {
+    return JSON.parse(__firebase_config);
   }
+  // --- あなたのFirebase情報 ---
   return {
     apiKey: "AIzaSyDEw9TJCXWJiAoDgc1XlXCMIOLMKxrzLgg",
     authDomain: "duty-manager-33163.firebaseapp.com",
     projectId: "duty-manager-33163",
     storageBucket: "duty-manager-33163.firebasestorage.app",
     messagingSenderId: "709632134796",
-    appId: "1:709632134796:web:62292d919b0dc83b7735a9"
+    appId: "1:709632134796:web:62292d919b0dc83b7735a9",
+    measurementId: "G-S05NOL39E0"
   };
 };
 
-const firebaseConfig = getFirebaseConfig();
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+const app = getApps().length === 0 ? initializeApp(getFirebaseConfig()) : getApps()[0];
 const auth = getAuth(app);
 const db = getFirestore(app);
-// プレビュー環境のIDを優先し、スラッシュはアンダースコアに置換（パスエラー防止）
-const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-v2-production';
+const appId = typeof __app_id !== 'undefined' ? String(__app_id).replace(/\//g, '_') : 'duty-manager-final-production';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -45,7 +46,6 @@ export default function App() {
   const [events, setEvents] = useState([]);
   const [activeTab, setActiveTab] = useState('home');
   const [loading, setLoading] = useState(true);
-  
   const [errorMsg, setErrorMsg] = useState(null);
 
   const [settings, setSettings] = useState({ appName: "当番管理", taskName: "用具" });
@@ -64,7 +64,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. Firebase 認証フロー (Mandatory Rule 3 準拠)
+  // 1. Firebase 認証フロー
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -75,7 +75,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg("認証エラー: FirebaseのAuthenticationで「匿名」を有効にしてください。");
+        setErrorMsg("認証エラー: FirebaseのAuthenticationで「匿名ログイン」が有効か確認してください。\n(Code: " + error.code + ")");
       }
     };
     initAuth();
@@ -91,7 +91,7 @@ export default function App() {
     };
   }, []);
 
-  // 2. グループ一覧取得 (Auth完了後に実行)
+  // 2. グループ一覧取得
   useEffect(() => {
     if (!user) return;
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
@@ -101,16 +101,14 @@ export default function App() {
     }, (err) => {
       console.error("Firestore groups error:", err);
       if (err.code === 'permission-denied') {
-        setErrorMsg("権限エラー: FirebaseコンソールのFirestore『ルール』タブで青い「公開(Publish)」ボタンを押したか確認してください。");
-      } else {
-        setErrorMsg("データ取得エラー: " + err.message);
+        setErrorMsg("権限エラー: Firestoreの「ルール」で青い公開ボタンが押されているか確認してください。");
       }
       setLoading(false);
     });
     return () => unsub();
   }, [user, groupId]);
 
-  // 3. 個別グループデータ取得 (groupId決定後に実行)
+  // 3. 個別グループデータ取得
   useEffect(() => {
     if (!user || !groupId) return;
     setLoading(true);
@@ -195,22 +193,17 @@ export default function App() {
   if (errorMsg) return (
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center">
-        <h2 className="text-red-600 font-black text-xl mb-4">⚠️ 権限エラー</h2>
+        <h2 className="text-red-600 font-black text-xl mb-4">⚠️ 接続エラー</h2>
         <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{errorMsg}</p>
-        <div className="bg-slate-50 p-4 rounded-xl text-xs text-left mb-6 font-mono text-slate-500">
-          Firestore ＞ ルール タブで<br/>
-          「公開(Publish)」を押しましたか？
-        </div>
-        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みして確認</button>
+        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl">再読み込みする</button>
       </div>
     </div>
   );
 
   if (loading) return (
-    <div className="flex flex-col h-screen items-center justify-center bg-slate-50 font-sans p-10 text-center">
+    <div className="flex flex-col h-screen items-center justify-center bg-slate-50 font-sans p-10 text-center text-slate-400">
       <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
-      <div className="font-black text-slate-400 text-lg mb-2 uppercase tracking-widest">Connecting...</div>
-      <div className="text-xs text-slate-300 font-bold italic">Checking Permissions</div>
+      <div className="font-black text-lg mb-2 uppercase tracking-widest">Connecting...</div>
     </div>
   );
 
@@ -226,7 +219,7 @@ export default function App() {
             <div>
               <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest">部屋に入る</h3>
               <div className="space-y-3">
-                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-4">作成済みの部屋はありません</p>}
+                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-4 italic">作成済みの部屋はありません</p>}
                 {groupList.map(g => (
                   <button key={g.id} onClick={() => window.location.hash = g.id} className="w-full p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm group hover:border-indigo-500 transition-all">
                     <span className="text-indigo-900">{g.name}</span><IconChevronRight />
@@ -296,7 +289,7 @@ export default function App() {
                     </div>
                   );
                 })()
-              ) : <p className="py-12 text-slate-400 font-bold italic text-center">予定なし</p>}
+              ) : <p className="py-12 text-slate-400 font-bold italic text-center text-sm">予定なし</p>}
             </div>
           </div>
         )}
@@ -347,6 +340,7 @@ export default function App() {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    <button onClick={() => { setEditingMemberId(m.id); setEditMemberName(m.name); setEditMemberCount(m.count || 0); }} className="p-3 text-slate-300 hover:text-indigo-600"><IconEdit /></button>
                     <button onClick={async () => await updateDoc(getDocRef('members', m.id), { active: !m.active })} className="text-[10px] font-bold px-4 py-2 border rounded-xl hover:bg-slate-50 transition-colors">{m.active ? '休止' : '復帰'}</button>
                     <button onClick={async () => { if(confirm(`${m.name}さんを削除？`)) await deleteDoc(getDocRef('members', m.id)); }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
                   </div>
@@ -360,10 +354,10 @@ export default function App() {
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
             <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">設定</h3>
             <div className="space-y-6">
-              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前</label><input type="text" value={settings.appName} onChange={async (e) => { 
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前 (学年など)</label><input type="text" value={settings.appName} onChange={async (e) => { 
                 const newName = e.target.value; const s = { ...settings, appName: newName }; setSettings(s); 
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
-                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+                if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
               }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" /></div>
               <div className="pt-6 border-t border-slate-100"><button onClick={() => { window.location.hash = ''; setGroupId(null); setActiveTab('home'); }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors"><IconLogOut /> 部屋を選び直す</button></div>
             </div>
