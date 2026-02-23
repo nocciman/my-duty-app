@@ -1,52 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query } from 'firebase/firestore';
+import { getFirestore, collection, doc, setDoc, getDoc, addDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- アイコンコンポーネント (SVG) ---
 const IconHome = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/><path d="M12 7v5l3 3"/></svg>;
 const IconCalendar = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>;
 const IconUsers = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>;
-const IconSettings = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1-2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>;
+const IconSettings = () => <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>;
 const IconTrash = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>;
 const IconPlus = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 const IconClose = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 const IconChevronRight = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
 const IconLogOut = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>;
 const IconEdit = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const IconLock = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="10" x="5" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 
-// --- 管理者パスワードの設定 ---
+// --- 管理者パスワード ---
 const MASTER_ADMIN_PASSCODE = "2525"; 
 
-// --- Firebase Configuration ---
-const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-    try {
-      const config = JSON.parse(__firebase_config);
-      if (config && config.apiKey) return config;
-    } catch (e) {
-      console.error("Firebase config parse error", e);
-    }
-  }
-  return {
-    apiKey: "AIzaSyDEw9TJCXWJlAoDgc1XlXCMl0LMKxrzLgg",
-    authDomain: "duty-manager-33163.firebaseapp.com",
-    projectId: "duty-manager-33163",
-    storageBucket: "duty-manager-33163.firebasestorage.app",
-    messagingSenderId: "709632134796",
-    appId: "1:709632134796:web:62292d919b0dc83b7735a9",
-    measurementId: "G-S05NOL39E0"
-  };
-};
+// --- Firebase Configuration (Sanitize appId for Rule 1 compatibility) ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyDEw9TJCXWJlAoDgc1XlXCMl0LMKxrzLgg",
+      authDomain: "duty-manager-33163.firebaseapp.com",
+      projectId: "duty-manager-33163",
+      storageBucket: "duty-manager-33163.firebasestorage.app",
+      messagingSenderId: "709632134796",
+      appId: "1:709632134796:web:62292d919b0dc83b7735a9"
+    };
 
-// Initialize Firebase services
-const firebaseConfig = getFirebaseConfig();
 const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
 
-// appId must strictly follow Rule 1 path requirements
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-final';
+// appIdからスラッシュを除去し、Firebaseの階層（セグメント）が壊れるのを防ぐ
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'duty-manager-v3-stable';
+const appId = String(rawAppId).replace(/\//g, '_');
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -58,15 +49,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  // 管理者認証状態
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState("");
 
   const [settings, setSettings] = useState({ appName: "当番管理", taskName: "用具" });
   const [modal, setModal] = useState({ open: false, title: '', content: '', onConfirm: null });
-  const [editingMemberId, setEditingMemberId] = useState(null);
-  const [editMemberName, setEditMemberName] = useState("");
-  const [editMemberCount, setEditMemberCount] = useState(0);
   const [isScheduleFormOpen, setIsScheduleFormOpen] = useState(false);
 
   const formatDate = (dateStr) => {
@@ -78,7 +65,7 @@ export default function App() {
 
   const closeModal = () => setModal({ ...modal, open: false });
 
-  // 1. Authentication Lifecycle (Rule 3: Auth Before Queries)
+  // 1. 認証の初期化 (Rule 3: Auth Before Queries)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -89,7 +76,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setErrorMsg(`認証エラー: Firebaseのアクセス権限または設定を確認してください。\n(Code: ${error.code})`);
+        setErrorMsg("認証エラー。FirebaseのAuthorized Domains設定にこのサイトのドメインが追加されているか確認してください。");
       }
     };
     initAuth();
@@ -107,11 +94,10 @@ export default function App() {
     };
   }, []);
 
-  // 2. Fetch Group List (Rule 1: Path Structure)
+  // 2. 団体一覧の取得 (Rule 1 & Rule 3 準拠)
   useEffect(() => {
-    if (!user) return; // Wait for authentication
+    if (!user) return; // 認証が終わるまで待機
     
-    // Path: /artifacts/{appId}/public/data/groups
     const groupsRef = collection(db, 'artifacts', appId, 'public', 'data', 'groups');
     
     const unsub = onSnapshot(groupsRef, (snap) => {
@@ -120,14 +106,14 @@ export default function App() {
     }, (err) => {
       console.error("Firestore groups error:", err);
       if (err.code === 'permission-denied') {
-        setErrorMsg("権限エラー: Firestoreの「ルール」設定が正しく公開(Publish)されているか、保存先パスが規定通りか確認してください。");
+        setErrorMsg("権限エラー。Firestoreの『ルール』タブで『公開(Publish)』ボタンが押されているか確認してください。また、Authorized Domainsの設定も必要です。");
       }
       setLoading(false);
     });
     return () => unsub();
   }, [user, groupId]);
 
-  // 3. Sync Specific Room Data
+  // 3. 部屋別データの同期
   useEffect(() => {
     if (!user || !groupId) return;
     setLoading(true);
@@ -146,12 +132,14 @@ export default function App() {
     
     const unsubE = onSnapshot(eventsCol, (s) => {
       setEvents(s.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => new Date(b.date) - new Date(a.date)));
-    }, (err) => console.error("Event sync error:", err));
+    });
     
     const unsubS = onSnapshot(configDoc, (d) => { 
-      if (d.exists()) setSettings(d.data());
-      else setSettings({ appName: "当番管理", taskName: "用具" });
-    }, (err) => console.error("Config sync error:", err));
+      if (d.exists()) {
+          const data = d.data();
+          setSettings({ appName: String(data.appName || "当番管理"), taskName: String(data.taskName || "用具") });
+      }
+    });
     
     return () => { unsubM(); unsubE(); unsubS(); };
   }, [user, groupId]);
@@ -166,17 +154,17 @@ export default function App() {
     const newGroupId = 'group_' + Date.now().toString(36);
     try {
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', newGroupId), { 
-          name: groupName, 
+          name: String(groupName), 
           createdAt: new Date().toISOString() 
       });
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', newGroupId), { 
-          appName: groupName, 
+          appName: String(groupName), 
           taskName: "用具" 
       });
       e.target.reset();
       window.location.hash = newGroupId;
     } catch (e) {
-      setModal({ open: true, title: "保存エラー", content: "部屋の作成に失敗しました。" });
+      setModal({ open: true, title: "エラー", content: "保存権限がありません。" });
     }
   };
 
@@ -188,7 +176,7 @@ export default function App() {
     if (members.length > 0) {
       initialCount = Math.floor(members.reduce((sum, m) => sum + (m.count || 0), 0) / members.length);
     }
-    await addDoc(getColRef('members'), { name, count: initialCount, active: true, createdAt: new Date().toISOString() });
+    await addDoc(getColRef('members'), { name: String(name), count: initialCount, active: true, createdAt: new Date().toISOString() });
     e.target.reset();
   };
 
@@ -198,15 +186,20 @@ export default function App() {
     const sets = parseInt(e.target.sets.value);
     const activeM = members.filter(m => m.active);
     if (activeM.length < sets) {
-      setModal({ open: true, title: 'メンバー不足', content: '当番に割り当て可能なメンバーが足りません。', onConfirm: null });
+      setModal({ open: true, title: 'メンバー不足', content: '当番に割り当て可能なメンバーが足りません。' });
       return;
     }
     const sortedMembers = [...activeM].sort((a, b) => (a.count || 0) - (b.count || 0));
     const selected = sortedMembers.slice(0, sets);
     try {
-      await addDoc(getColRef('events'), { date, numSets: sets, assignedIds: selected.map(m => m.id), assignedNames: selected.map(m => m.name), completed: false, createdAt: new Date().toISOString() });
+      await addDoc(getColRef('events'), { 
+          date, numSets: sets, 
+          assignedIds: selected.map(m => m.id), 
+          assignedNames: selected.map(m => String(m.name)), 
+          completed: false, createdAt: new Date().toISOString() 
+      });
       setIsScheduleFormOpen(false);
-    } catch (err) { setModal({ open: true, title: 'エラー', content: '保存に失敗しました。', onConfirm: null }); }
+    } catch (err) { setModal({ open: true, title: 'エラー', content: '保存に失敗しました。' }); }
   };
 
   const completeEvent = async (event) => {
@@ -228,7 +221,7 @@ export default function App() {
     if (adminPassInput === MASTER_ADMIN_PASSCODE) {
       setIsAdminAuthenticated(true);
     } else {
-      setModal({ open: true, title: "認証失敗", content: "管理者パスワードが正しくありません。", onConfirm: null });
+      setModal({ open: true, title: "認証失敗", content: "パスワードが違います。" });
     }
   };
 
@@ -236,8 +229,8 @@ export default function App() {
     <div className="min-h-screen bg-red-50 flex items-center justify-center p-8 font-sans">
       <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm border-2 border-red-100 text-center animate-in zoom-in-95">
         <h2 className="text-red-600 font-black text-xl mb-4 text-center">⚠️ 接続エラー</h2>
-        <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap">{errorMsg}</p>
-        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all">再読み込みする</button>
+        <p className="text-slate-600 text-sm leading-relaxed mb-6 whitespace-pre-wrap font-bold">{errorMsg}</p>
+        <button onClick={() => window.location.reload()} className="w-full bg-red-600 text-white font-bold py-4 rounded-2xl shadow-lg">再読み込み</button>
       </div>
     </div>
   );
@@ -246,7 +239,7 @@ export default function App() {
     <div className="flex flex-col h-screen items-center justify-center bg-slate-50 font-sans p-10 text-center text-slate-400">
       <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-6"></div>
       <div className="font-black text-lg mb-2 uppercase tracking-widest text-indigo-600">Connecting...</div>
-      <div className="text-[10px] font-bold uppercase tracking-[0.2em]">{user ? "Access Granted" : "Checking Auth"}</div>
+      <div className="text-[10px] font-bold uppercase tracking-[0.2em]">{user ? "Auth Success" : "Checking Access"}</div>
     </div>
   );
 
@@ -257,26 +250,21 @@ export default function App() {
         <div className="min-h-screen bg-slate-100 flex flex-col items-center justify-center p-5 font-sans">
           <div className="w-full max-w-md bg-white rounded-[2.5rem] p-10 shadow-2xl text-center animate-in fade-in zoom-in-95 duration-300">
             <div className="text-5xl mb-6">🔒</div>
-            <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight uppercase">Admin Lock</h1>
-            <p className="text-slate-400 text-sm mb-8 leading-relaxed">管理者パネルを表示するには<br/>パスワードを入力してください</p>
+            <h1 className="text-2xl font-black text-indigo-600 mb-2 tracking-tight uppercase">Admin Panel</h1>
+            <p className="text-slate-400 text-sm mb-8 leading-relaxed font-bold">管理者用パスワードを<br/>入力してください</p>
             <input 
               type="password" 
-              placeholder="パスワード"
+              placeholder="Password"
               value={adminPassInput}
               onChange={(e) => setAdminPassInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && checkAdminAuth()}
               className="w-full p-5 rounded-2xl bg-slate-50 border-none ring-1 ring-slate-200 font-bold text-center text-xl mb-6 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
             />
-            <button 
-              onClick={checkAdminAuth}
-              className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-indigo-100 active:scale-95 transition-all"
-            >
-              認証する
-            </button>
+            <button onClick={checkAdminAuth} className="w-full bg-indigo-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">ログイン</button>
           </div>
           {modal.open && (
             <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
-              <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl">
+              <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95">
                 <h3 className="text-xl font-black mb-4">{modal.title}</h3>
                 <p className="text-slate-600 mb-6">{modal.content}</p>
                 <button onClick={closeModal} className="w-full py-4 font-bold text-indigo-600">閉じる</button>
@@ -293,17 +281,17 @@ export default function App() {
           <div className="text-center mb-10">
             <div className="text-5xl mb-2">📋</div>
             <h1 className="text-3xl font-black text-indigo-600 tracking-tighter">DUTY MANAGER</h1>
-            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-2 bg-slate-50 py-1 rounded-full inline-block px-4">Admin Dashboard</p>
+            <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mt-2">Admin Dashboard</p>
           </div>
           <div className="space-y-8">
             <div>
-              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">作成済みの部屋 (団体)</h3>
+              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">登録済みの団体</h3>
               <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
-                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-8 italic">団体はまだありません</p>}
+                {groupList.length === 0 && <p className="text-slate-300 text-sm text-center py-8 italic font-bold">団体はまだありません</p>}
                 {groupList.map(g => (
                   <div key={g.id} className="flex gap-2 group">
                     <button onClick={() => window.location.hash = g.id} className="flex-1 p-5 bg-white border-2 border-slate-100 rounded-2xl text-left flex justify-between items-center font-bold shadow-sm hover:border-indigo-500 transition-all overflow-hidden">
-                      <span className="text-indigo-900 truncate">{g.name}</span><IconChevronRight />
+                      <span className="text-indigo-900 truncate font-black">{String(g.name)}</span><IconChevronRight />
                     </button>
                     <button onClick={() => {
                       setModal({
@@ -316,23 +304,23 @@ export default function App() {
               </div>
             </div>
             <div className="pt-8 border-t border-slate-100">
-              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">新しい団体を追加</h3>
+              <h3 className="text-xs font-black text-slate-400 mb-3 uppercase tracking-widest ml-1">団体を追加</h3>
               <form onSubmit={handleCreateGroup} className="flex gap-2">
-                <input name="groupName" placeholder="団体名を入力" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 transition-all" required />
+                <input name="groupName" placeholder="団体名" className="flex-1 p-4 bg-slate-50 rounded-2xl font-bold outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 transition-all" required />
                 <button type="submit" className="bg-indigo-600 text-white px-6 rounded-2xl font-black shadow-lg active:scale-95 transition-all">作成</button>
               </form>
             </div>
-            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500 transition-colors">Logout Admin Session</button>
+            <button onClick={() => setIsAdminAuthenticated(false)} className="w-full py-4 text-slate-300 text-[10px] font-bold uppercase tracking-[0.2em] hover:text-slate-500">Log out Admin</button>
           </div>
         </div>
         {modal.open && (
             <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
               <div className="bg-white rounded-[2rem] w-full max-w-xs p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200">
                 <h3 className="text-xl font-black mb-4">{modal.title}</h3>
-                <p className="text-slate-600 mb-6 whitespace-pre-wrap leading-relaxed">{modal.content}</p>
+                <p className="text-slate-600 mb-6 whitespace-pre-wrap leading-relaxed font-bold">{modal.content}</p>
                 <div className="flex gap-2">
-                   <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">いいえ</button>
-                   <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-red-600 bg-red-50 rounded-xl">削除する</button>
+                   <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">中止</button>
+                   <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-red-600 bg-red-50 rounded-xl">削除</button>
                 </div>
               </div>
             </div>
@@ -343,24 +331,7 @@ export default function App() {
 
   // --- メインアプリ画面 ---
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative">
-      {modal.open && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-[2rem] w-full max-w-xs overflow-hidden shadow-2xl p-8 text-center animate-in zoom-in-95">
-            <h3 className="text-2xl font-black mb-4">{modal.title}</h3>
-            <p className="text-slate-600 mb-6">{modal.content}</p>
-            <div className="flex gap-2">
-              {modal.onConfirm ? (
-                <>
-                  <button onClick={closeModal} className="flex-1 py-4 font-bold text-slate-400">いいえ</button>
-                  <button onClick={modal.onConfirm} className="flex-1 py-4 font-bold text-indigo-600 border-l border-slate-100">はい</button>
-                </>
-              ) : <button onClick={closeModal} className="w-full py-4 font-bold text-indigo-600">閉じる</button>}
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-28 max-w-md mx-auto shadow-2xl font-sans relative overflow-x-hidden">
       <header className="bg-white border-b border-slate-200 px-6 py-5 sticky top-0 z-40 flex justify-between items-center shadow-sm">
         <div className="flex flex-col">
           <h1 className="text-xl font-black truncate max-w-[200px] tracking-tight">{settings.appName}</h1>
@@ -381,9 +352,9 @@ export default function App() {
                     <div className="space-y-6">
                       <div className="text-3xl font-black text-slate-800">{formatDate(next.date)}</div>
                       <div className="flex flex-wrap justify-center gap-2 mt-4">
-                        {next.assignedNames.map((name, i) => (
+                        {(next.assignedNames || []).map((name, i) => (
                           <div key={i} className="flex items-center justify-between bg-indigo-600 text-white px-6 py-4 rounded-[2rem] shadow-lg">
-                            <span className="text-2xl font-bold">{name} さん</span>
+                            <span className="text-2xl font-bold">{String(name)} さん</span>
                           </div>
                         ))}
                       </div>
@@ -403,13 +374,13 @@ export default function App() {
                 <button onClick={() => setIsScheduleFormOpen(true)} className="w-full bg-indigo-600 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all"><IconPlus /> 予定を追加</button>
                 {events.filter(e => !e.completed).sort((a, b) => new Date(a.date) - new Date(b.date)).map(e => (
                   <div key={e.id} className="bg-white p-5 rounded-[2rem] border border-slate-100 flex justify-between items-center shadow-sm">
-                    <div>
+                    <div className="max-w-[70%]">
                       <div className="text-xl font-black text-slate-800">{formatDate(e.date)}</div>
-                      <div className="text-xs font-bold text-indigo-500 uppercase mt-1">担当: {e.assignedNames.join(', ')}</div>
+                      <div className="text-xs font-bold text-indigo-500 uppercase mt-1 truncate">担当: {(e.assignedNames || []).join(', ')}</div>
                     </div>
                     <button onClick={async () => { 
                       setModal({
-                        open: true, title: "予定の削除", content: "この予定を消去しますか？",
+                        open: true, title: "予定の削除", content: "消去しますか？",
                         onConfirm: async () => { await deleteDoc(getDocRef('events', e.id)); setModal({...modal, open: false}); }
                       });
                     }} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><IconTrash /></button>
@@ -438,11 +409,11 @@ export default function App() {
             </form>
             <div className="space-y-3">
               {members.map(m => (
-                <div key={m.id} className={`p-4 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm' : 'bg-slate-100 border-transparent opacity-60'}`}>
+                <div key={m.id} className={`p-4 rounded-[2rem] border flex items-center justify-between transition-all ${m.active ? 'bg-white shadow-sm border-slate-100' : 'bg-slate-100 border-transparent opacity-60'}`}>
                   <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{m.name.charAt(0)}</div>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-white shadow-sm ${m.active ? 'bg-indigo-500' : 'bg-slate-400'}`}>{String(m.name).charAt(0)}</div>
                     <div>
-                      <div className="font-bold text-lg">{m.name} さん</div>
+                      <div className="font-bold text-lg">{String(m.name)} さん</div>
                       <div className="text-xs text-indigo-500 font-bold uppercase tracking-widest">回数: {m.count || 0}</div>
                     </div>
                   </div>
@@ -463,13 +434,15 @@ export default function App() {
 
         {activeTab === 'settings' && (
           <div className="bg-white p-8 rounded-[3rem] space-y-8 animate-in slide-in-from-right-2 duration-300 shadow-sm border border-slate-200">
-            <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">設定</h3>
+            <h3 className="font-black text-2xl tracking-tight text-slate-800 text-center">App Settings</h3>
             <div className="space-y-6">
-              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前</label><input type="text" value={settings.appName} onChange={async (e) => { 
-                const newName = e.target.value; const s = { ...settings, appName: newName }; setSettings(s); 
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), s); 
-                if (groupId !== 'default') await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
+              <div><label className="text-[10px] font-black text-slate-400 mb-2 block ml-1 uppercase tracking-widest text-center">部屋の名前</label>
+              <input type="text" value={settings.appName} onChange={async (e) => { 
+                const newName = String(e.target.value); setSettings(s => ({ ...s, appName: newName })); 
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'config', groupId), { ...settings, appName: newName }); 
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'groups', groupId), { name: newName });
               }} className="w-full p-5 rounded-2xl bg-slate-50 font-bold ring-1 ring-slate-200 outline-none text-center" /></div>
+              
               <div className="pt-6 border-t border-slate-100">
                 <button onClick={() => { 
                     setAdminPassInput(""); 
@@ -477,12 +450,12 @@ export default function App() {
                     window.location.hash = ''; 
                     setGroupId(null); 
                     setActiveTab('home'); 
-                }} className="w-full bg-slate-100 text-slate-500 font-bold py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors">
-                  <IconLogOut /> 別の部屋を選ぶ (管理者認証が必要)
+                }} className="w-full bg-slate-100 text-slate-500 font-black py-5 rounded-2xl flex justify-center items-center gap-2 active:bg-slate-200 transition-colors uppercase text-[10px] tracking-widest">
+                  <IconLogOut /> 部屋を選び直す
                 </button>
               </div>
             </div>
-            <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-bold py-5 rounded-2xl shadow-xl active:scale-95 transition-all">完了</button>
+            <button onClick={() => setActiveTab('home')} className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all">完了</button>
           </div>
         )}
       </main>
